@@ -1,400 +1,419 @@
-import React, { useState } from 'react';
-import { Calculator, Check, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Calculator, Pencil, RotateCcw, Save, Sliders, X } from 'lucide-react';
 import type {
-  AppStateResponse,
-  HydratedPart,
-  KpiWindowDays,
-  PhuTung,
-  UserRole,
+  MergedInventoryItem,
+  SheetsStateResponse,
+  ThamSoOverride,
 } from '../types/inventory';
-import { formatCurrency, formatNumber, getStatusMeta } from '../lib/format';
+import { formatNumber, getSheetStatusMeta } from '../lib/format';
+import { computeInclusiveDays } from '../lib/inventoryCalculator';
 
 interface KpiAnalysisPageProps {
-  state: AppStateResponse;
-  role: UserRole;
-  kpiDays: KpiWindowDays;
-  onKpiDaysChange: (days: KpiWindowDays) => void;
-  onUpdatePart: (id: string, payload: Partial<PhuTung>) => Promise<void>;
-  onSelectPart: (part: HydratedPart) => void;
+  state: SheetsStateResponse;
+  onSelectItem: (item: MergedInventoryItem) => void;
+  onSaveThamSo: (payload: Omit<ThamSoOverride, 'active'>) => Promise<void>;
+  onResetThamSo: () => Promise<void>;
 }
 
 export function KpiAnalysisPage({
   state,
-  role,
-  kpiDays,
-  onKpiDaysChange,
-  onUpdatePart,
-  onSelectPart,
+  onSelectItem,
+  onSaveThamSo,
+  onResetThamSo,
 }: KpiAnalysisPageProps) {
-  const [expandedId, setExpandedId] = useState<string | null>('PT001');
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const { thamSo, items } = state;
+  const isCustomOverride = state.thamSoSource === 'FIRESTORE_OVERRIDE';
+
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    tuNgayIso: thamSo.tuNgayIso,
+    denNgayIso: thamSo.denNgayIso,
+    ngayXemBaoCaoIso: thamSo.ngayXemBaoCaoIso,
+    leadTimeMacDinh: thamSo.leadTimeMacDinh,
+    soNgayDuTruMongMuon: thamSo.soNgayDuTruMongMuon,
+    soNgayCanhBaoTruoc: thamSo.soNgayCanhBaoTruoc,
+  });
 
-  const d = state.dashboard;
+  useEffect(() => {
+    if (!editing) {
+      setForm({
+        tuNgayIso: thamSo.tuNgayIso,
+        denNgayIso: thamSo.denNgayIso,
+        ngayXemBaoCaoIso: thamSo.ngayXemBaoCaoIso,
+        leadTimeMacDinh: thamSo.leadTimeMacDinh,
+        soNgayDuTruMongMuon: thamSo.soNgayDuTruMongMuon,
+        soNgayCanhBaoTruoc: thamSo.soNgayCanhBaoTruoc,
+      });
+    }
+  }, [editing, thamSo]);
 
-  const handleQuickMethodChange = async (
-    part: HydratedPart,
-    patch: Partial<PhuTung>
-  ) => {
+  const previewPeriodDays = computeInclusiveDays(form.tuNgayIso, form.denNgayIso);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg(null);
-    setSavingId(part.id);
+    if (form.tuNgayIso > form.denNgayIso) {
+      setErrorMsg('Từ ngày không được lớn hơn Đến ngày của kỳ thống kê.');
+      return;
+    }
+    setSaving(true);
     try {
-      await onUpdatePart(part.id, patch);
+      await onSaveThamSo({
+        tuNgayIso: form.tuNgayIso,
+        denNgayIso: form.denNgayIso,
+        ngayXemBaoCaoIso: form.ngayXemBaoCaoIso,
+        leadTimeMacDinh: Number(form.leadTimeMacDinh),
+        soNgayDuTruMongMuon: Number(form.soNgayDuTruMongMuon),
+        soNgayCanhBaoTruoc: Number(form.soNgayCanhBaoTruoc),
+      });
+      setEditing(false);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Không thể cập nhật thông số.');
+      setErrorMsg(
+        err instanceof Error ? err.message : 'Không thể lưu tham số vào Firebase.'
+      );
     } finally {
-      setSavingId(null);
+      setSaving(false);
     }
   };
 
+  const handleReset = async () => {
+    setErrorMsg(null);
+    setSaving(true);
+    try {
+      await onResetThamSo();
+      setEditing(false);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : 'Không thể khôi phục tham số từ Google Sheets.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const paramRows = [
+    { label: 'Từ ngày (bắt đầu kỳ thống kê)', value: thamSo.tuNgay },
+    { label: 'Đến ngày (kết thúc kỳ thống kê)', value: thamSo.denNgay },
+    { label: 'Số ngày của kỳ', value: `${thamSo.soNgayCuaKy} ngày` },
+    { label: 'Ngày xem báo cáo', value: thamSo.ngayXemBaoCao },
+    { label: 'Thời gian chờ hàng mặc định (Lead Time)', value: `${thamSo.leadTimeMacDinh} ngày` },
+    { label: 'Số ngày dự trữ mong muốn', value: `${thamSo.soNgayDuTruMongMuon} ngày` },
+    { label: 'Số ngày cảnh báo trước điểm đặt', value: `${thamSo.soNgayCanhBaoTruoc} ngày` },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
-            Phân tích KPI & Kiểm tra công thức tồn kho
-          </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
-            Hiển thị đầy đủ công thức, dữ liệu đầu vào và kết quả tự động tính lại theo thời gian thực
-          </p>
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
+          Bảng Tính Chỉ Số Tồn Kho & Tham Số (THAM SO)
+        </h1>
+        <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
+          Nhân viên có thể chỉnh các tham số vận hành tại đây (lưu trên Firebase Firestore), còn toàn bộ chỉ số ROP, Safety Stock & SL đề xuất đặt sẽ được hệ thống tự động tính toán.
+        </p>
+      </div>
+
+      {/* Live THAM SO Table / Editor */}
+      <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3 bg-zinc-50">
+          <div className="flex flex-wrap items-center gap-2">
+            <Sliders className="w-4 h-4 text-orange-600" />
+            <h2 className="text-sm font-bold text-zinc-900">
+              Tham số vận hành (THAM SO)
+            </h2>
+            <span
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                isCustomOverride
+                  ? 'bg-orange-50 text-orange-700 border-orange-200'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              }`}
+            >
+              {isCustomOverride
+                ? 'Đang dùng tham số chỉnh trên Web (Firebase)'
+                : 'Đang đồng bộ theo Google Sheets'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {isCustomOverride && !editing && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleReset}
+                className="h-8 px-3 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-semibold text-zinc-700 inline-flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Khôi phục theo Google Sheets
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMsg(null);
+                setEditing((prev) => !prev);
+              }}
+              className="h-8 px-3 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold inline-flex items-center gap-1.5"
+            >
+              {editing ? (
+                <>
+                  <X className="w-3.5 h-3.5" />
+                  Đóng chỉnh sửa
+                </>
+              ) : (
+                <>
+                  <Pencil className="w-3.5 h-3.5" />
+                  Nhập / Chỉnh sửa tham số
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-zinc-600">Kỳ phân tích ADD:</span>
-          <div className="inline-flex items-center p-1 bg-white border border-zinc-200 rounded-lg">
-            {([30, 60, 90] as KpiWindowDays[]).map((days) => (
-              <button
-                key={days}
-                type="button"
-                onClick={() => onKpiDaysChange(days)}
-                className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-md transition-colors ${
-                  kpiDays === days
-                    ? 'bg-orange-600 text-white'
-                    : 'text-zinc-600 hover:text-zinc-900'
-                }`}
-              >
-                {days} ngày
-              </button>
+        {editing ? (
+          <form onSubmit={handleSave} className="p-5 space-y-4 text-xs">
+            {errorMsg && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 font-medium">
+                {errorMsg}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block font-semibold text-zinc-700 mb-1">
+                  Từ ngày (bắt đầu kỳ thống kê) *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={form.tuNgayIso}
+                  onChange={(e) => setForm({ ...form, tuNgayIso: e.target.value })}
+                  className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-zinc-700 mb-1">
+                  Đến ngày (kết thúc kỳ thống kê) *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={form.denNgayIso}
+                  onChange={(e) => setForm({ ...form, denNgayIso: e.target.value })}
+                  className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-zinc-700 mb-1">
+                  Ngày xem báo cáo *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={form.ngayXemBaoCaoIso}
+                  onChange={(e) =>
+                    setForm({ ...form, ngayXemBaoCaoIso: e.target.value })
+                  }
+                  className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-zinc-700 mb-1">
+                  Lead Time mặc định (ngày) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  max={365}
+                  value={form.leadTimeMacDinh}
+                  onChange={(e) =>
+                    setForm({ ...form, leadTimeMacDinh: Number(e.target.value) })
+                  }
+                  className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-zinc-700 mb-1">
+                  Số ngày dự trữ mong muốn *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  max={365}
+                  value={form.soNgayDuTruMongMuon}
+                  onChange={(e) =>
+                    setForm({ ...form, soNgayDuTruMongMuon: Number(e.target.value) })
+                  }
+                  className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-zinc-700 mb-1">
+                  Số ngày cảnh báo trước điểm đặt *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  max={365}
+                  value={form.soNgayCanhBaoTruoc}
+                  onChange={(e) =>
+                    setForm({ ...form, soNgayCanhBaoTruoc: Number(e.target.value) })
+                  }
+                  className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-zinc-600">
+                Số ngày của kỳ sẽ tự động tính:{' '}
+                <strong className="font-mono text-zinc-900">{previewPeriodDays} ngày</strong>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="h-9 px-3.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="h-9 px-4 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-semibold inline-flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  {saving ? 'Đang lưu...' : 'Lưu tham số lên Firebase'}
+                </button>
+              </div>
+            </div>
+          </form>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-zinc-100">
+            {paramRows.map((row) => (
+              <div key={row.label} className="p-4 border-b border-zinc-100 lg:border-b-0">
+                <div className="text-[11px] text-zinc-500 font-medium">{row.label}</div>
+                <div className="text-base font-bold font-mono tabular-nums text-zinc-900 mt-1">
+                  {row.value}
+                </div>
+              </div>
             ))}
           </div>
-        </div>
+        )}
       </div>
 
-      {errorMsg && (
-        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 font-medium">
-          {errorMsg}
-        </div>
-      )}
-
-      {/* System-level Turnover, DOH, Stockout Rate Verification Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-zinc-700">
-              G. Inventory Turnover (Vòng quay tồn kho)
-            </span>
-            <span className="font-mono text-base font-bold text-zinc-900 tabular-nums">
-              {d.inventoryTurnover !== null ? `${d.inventoryTurnover} vòng` : '—'}
-            </span>
-          </div>
-          <div className="text-[11px] text-zinc-500 mt-1.5">
-            Công thức: Giá vốn phụ tùng đã xuất trong kỳ / Giá trị tồn kho bình quân
-          </div>
-          <div className="text-xs font-mono text-zinc-700 bg-zinc-50 px-2.5 py-1.5 rounded mt-2">
-            {d.inventoryTurnoverFormula}
-          </div>
-        </div>
-
-        <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-zinc-700">
-              H. Days of Inventory on Hand (DOH)
-            </span>
-            <span className="font-mono text-base font-bold text-zinc-900 tabular-nums">
-              {d.doh !== null ? `${d.doh} ngày` : '—'}
-            </span>
-          </div>
-          <div className="text-[11px] text-zinc-500 mt-1.5">
-            Công thức: Số ngày trong kỳ ({d.periodDays} ngày) / Inventory Turnover
-          </div>
-          <div className="text-xs font-mono text-zinc-700 bg-zinc-50 px-2.5 py-1.5 rounded mt-2">
-            {d.dohFormula}
-          </div>
-        </div>
-
-        <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-zinc-700">
-              I. Stockout Rate (Tỷ lệ thiếu hàng)
-            </span>
-            <span className="font-mono text-base font-bold text-orange-700 tabular-nums">
-              {d.stockoutRate !== null ? `${d.stockoutRate}%` : 'Chưa có dữ liệu'}
-            </span>
-          </div>
-          <div className="text-[11px] text-zinc-500 mt-1.5">
-            Công thức: Số lần yêu cầu không đáp ứng đủ / Tổng số yêu cầu × 100%
-          </div>
-          <div className="text-xs font-mono text-zinc-700 bg-zinc-50 px-2.5 py-1.5 rounded mt-2">
-            {d.stockoutFormula}
-          </div>
-        </div>
-      </div>
-
-      {/* Per-part KPI Audit Table */}
+      {/* Full 16-column TINH CHI SO Table */}
       <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-zinc-200 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-zinc-200 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Calculator className="w-4 h-4 text-orange-600" />
             <h2 className="text-sm font-bold text-zinc-900">
-              Bảng kiểm tra công thức KPI từng phụ tùng (Nhấn vào dòng để xem công thức chi tiết)
+              Bảng chỉ số tự động tính toán ({items.length} mã phụ tùng)
             </h2>
           </div>
-          {role !== 'QUAN_LY' && (
-            <span className="text-[11px] text-amber-700 font-medium">
-              Chế độ xem Nhân viên kho (Quản lý mới chỉnh được ngưỡng SS/LT)
-            </span>
-          )}
+          <span className="text-xs text-zinc-500">
+            Nhấn vào từng dòng để xem chi tiết & giao dịch
+          </span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
             <thead className="bg-zinc-50 text-zinc-500 border-b border-zinc-200">
               <tr>
-                <th className="px-4 py-3 font-semibold">Mã & Tên phụ tùng</th>
-                <th className="px-4 py-3 font-semibold text-right">ADD ({kpiDays}N)</th>
-                <th className="px-4 py-3 font-semibold text-right">Lead Time</th>
-                <th className="px-4 py-3 font-semibold text-right">Safety Stock</th>
-                <th className="px-4 py-3 font-semibold text-right">ROP</th>
-                <th className="px-4 py-3 font-semibold text-right">IP / Tồn</th>
-                <th className="px-4 py-3 font-semibold text-right">EOQ</th>
-                <th className="px-4 py-3 font-semibold text-right">ROQ Đề xuất</th>
-                <th className="px-4 py-3 font-semibold">Trạng thái</th>
-                <th className="px-4 py-3 font-semibold text-right">Chi tiết</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Mã PT</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Tên phụ tùng</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Tổng nhập</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Tổng xuất</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Tồn hiện tại</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Xuất trong kỳ</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Tiêu thụ TB/ngày</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Còn dùng (ngày)</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Nhu cầu lúc chờ</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Đủ dùng lúc chờ</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Tồn an toàn</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Điểm đặt hàng</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Số ngày tới ROP</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Đặt muộn nhất</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">SL đề xuất đặt</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Quyết định</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {state.parts.map((part) => {
-                const k = part.kpi;
-                const isExpanded = expandedId === part.id;
-                const meta = getStatusMeta(k.trangThai);
+              {items.map((it) => {
+                const ind = it.indicator;
+                const meta = getSheetStatusMeta(it.trangThai);
                 return (
-                  <React.Fragment key={part.id}>
-                    <tr
-                      onClick={() => setExpandedId(isExpanded ? null : part.id)}
-                      className="hover:bg-zinc-50 cursor-pointer"
-                    >
-                      <td className="px-4 py-3">
-                        <div className="font-mono font-bold text-zinc-900">{part.maPhuTung}</div>
-                        <div className="text-zinc-600 font-medium">{part.tenPhuTung}</div>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums">
-                        <div className="font-semibold text-zinc-900">{k.add}</div>
-                        <div className="text-[11px] text-zinc-400">
-                          {k.tongTieuThuTrongKy}/{kpiDays}N
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums">
-                        <div className="font-semibold text-zinc-900">{k.leadTime} ngày</div>
-                        <div className="text-[11px] text-zinc-400">{k.leadTimeNguon}</div>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums">
-                        <div className="font-semibold text-zinc-900">{k.safetyStock}</div>
-                        <div className="text-[11px] text-zinc-400">{k.safetyStockNguon}</div>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums font-bold text-orange-700">
-                        {k.rop}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums">
-                        <span className="font-bold text-zinc-900">{k.inventoryPosition}</span>
-                        <span className="text-zinc-400"> / {k.tonHienTai}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums">
-                        {k.eoqDuDuLieu ? (
-                          <span className="font-semibold text-zinc-900">{k.eoq}</span>
-                        ) : (
-                          <span className="text-amber-700 font-medium">Chưa đủ dữ liệu</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums">
-                        <div className="font-bold text-orange-700">{k.roq}</div>
-                        <div className="text-[11px] text-zinc-400">
-                          {k.roqPhuongPhap === 'eoq' ? 'Theo EOQ' : 'Mức mục tiêu'}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`font-semibold ${meta.textClass}`}>{meta.label}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          className="p-1 text-zinc-500 hover:text-zinc-900"
-                          aria-label="Mở rộng công thức"
-                        >
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4" />
-                          )}
-                        </button>
-                      </td>
-                    </tr>
-
-                    {isExpanded && (
-                      <tr className="bg-zinc-50/80">
-                        <td colSpan={10} className="px-5 py-4 border-t border-zinc-200">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                            <div className="p-3 bg-white border border-zinc-200 rounded-lg space-y-1">
-                              <div className="font-bold text-zinc-800">ADD & Demand</div>
-                              <div className="font-mono text-zinc-700">{k.addFormula}</div>
-                              <div className="text-[11px] text-zinc-500">
-                                Max ngày: {k.nhuCauToiDaNgay} · D năm: {k.annualDemandD}
-                              </div>
-                            </div>
-                            <div className="p-3 bg-white border border-zinc-200 rounded-lg space-y-1">
-                              <div className="font-bold text-zinc-800">Safety Stock & ROP</div>
-                              <div className="font-mono text-zinc-700">{k.safetyStockFormula}</div>
-                              <div className="font-mono text-orange-700 font-semibold">
-                                ROP = {k.ropFormula}
-                              </div>
-                            </div>
-                            <div className="p-3 bg-white border border-zinc-200 rounded-lg space-y-1">
-                              <div className="font-bold text-zinc-800">EOQ & ROQ</div>
-                              <div className="font-mono text-zinc-700">{k.eoqFormula}</div>
-                              <div className="font-mono text-zinc-700">{k.roqFormula}</div>
-                            </div>
-                          </div>
-
-                          {/* Interactive Controls for adjusting method */}
-                          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-zinc-200">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <label className="flex items-center gap-1.5 text-xs">
-                                <span className="font-semibold text-zinc-700">Phương pháp ROQ:</span>
-                                <select
-                                  disabled={savingId === part.id}
-                                  value={part.phuongPhapROQ}
-                                  onChange={(e) =>
-                                    handleQuickMethodChange(part, {
-                                      phuongPhapROQ: e.target.value as 'eoq' | 'target',
-                                    })
-                                  }
-                                  className="h-8 px-2 rounded border border-zinc-200 bg-white text-xs font-medium"
-                                >
-                                  <option value="eoq">Theo EOQ</option>
-                                  <option value="target">Theo mức tồn mục tiêu</option>
-                                </select>
-                              </label>
-
-                              {role === 'QUAN_LY' && (
-                                <>
-                                  <label className="flex items-center gap-1.5 text-xs">
-                                    <span className="font-semibold text-zinc-700">Safety Stock:</span>
-                                    <select
-                                      disabled={savingId === part.id}
-                                      value={part.phuongPhapSS}
-                                      onChange={(e) =>
-                                        handleQuickMethodChange(part, {
-                                          phuongPhapSS: e.target.value as 'manual' | 'auto',
-                                        })
-                                      }
-                                      className="h-8 px-2 rounded border border-zinc-200 bg-white text-xs font-medium"
-                                    >
-                                      <option value="manual">Thủ công ({part.safetyStockThuCong ?? k.safetyStock})</option>
-                                      <option value="auto">Tự động (Max - Avg)</option>
-                                    </select>
-                                  </label>
-
-                                  <label className="flex items-center gap-1.5 text-xs">
-                                    <span className="font-semibold text-zinc-700">Lead Time:</span>
-                                    <select
-                                      disabled={savingId === part.id}
-                                      value={part.phuongPhapLT}
-                                      onChange={(e) =>
-                                        handleQuickMethodChange(part, {
-                                          phuongPhapLT: e.target.value as 'manual' | 'history',
-                                        })
-                                      }
-                                      className="h-8 px-2 rounded border border-zinc-200 bg-white text-xs font-medium"
-                                    >
-                                      <option value="manual">Thủ công ({part.leadTimeThuCong ?? k.leadTime}N)</option>
-                                      <option value="history">Trung bình lịch sử đơn hàng</option>
-                                    </select>
-                                  </label>
-                                </>
-                              )}
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => onSelectPart(part)}
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 hover:text-orange-700"
-                            >
-                              <Info className="w-3.5 h-3.5" />
-                              Xem hồ sơ phụ tùng & biểu đồ
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
+                  <tr
+                    key={ind.maPhuTung}
+                    onClick={() => onSelectItem(it)}
+                    className="hover:bg-zinc-50 cursor-pointer"
+                  >
+                    <td className="px-3 py-3 font-mono font-bold text-zinc-900 whitespace-nowrap">
+                      {ind.maPhuTung}
+                    </td>
+                    <td className="px-3 py-3 font-medium text-zinc-900 min-w-[160px]">
+                      {ind.tenPhuTung}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {formatNumber(ind.tongNhap)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {formatNumber(ind.tongXuat)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums font-bold text-zinc-900">
+                      {formatNumber(ind.tonHienTai)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {formatNumber(ind.xuatTrongKy)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {formatNumber(ind.tieuThuTBNgay, 4)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {ind.soNgayConDuDung !== null ? formatNumber(ind.soNgayConDuDung, 1) : '—'}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {formatNumber(ind.nhuCauLucChoHang, 2)}
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap font-semibold">
+                      <span
+                        className={
+                          ind.duDungLucCho === 'Thiếu' ? 'text-red-700' : 'text-emerald-700'
+                        }
+                      >
+                        {ind.duDungLucCho || '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {formatNumber(ind.tonAnToan)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums font-semibold text-orange-700">
+                      {formatNumber(ind.diemDatHang)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {ind.soNgayToiDiemDat !== null ? formatNumber(ind.soNgayToiDiemDat, 1) : '—'}
+                    </td>
+                    <td className="px-3 py-3 font-mono tabular-nums text-zinc-700 whitespace-nowrap">
+                      {ind.ngayDatMuonNhat || '—'}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums font-bold text-red-700">
+                      {formatNumber(ind.slDeXuatDat)}
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded border text-[11px] font-bold ${meta.bgClass} ${meta.textClass} ${meta.borderClass}`}
+                      >
+                        {ind.quyetDinhRaw || it.trangThaiLabel}
+                      </span>
+                    </td>
+                  </tr>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Parts Request Fulfillment Log for Stockout Rate */}
-      <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-zinc-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-bold text-zinc-900">
-              Nhật ký đáp ứng yêu cầu phụ tùng (Dữ liệu tính Stockout Rate)
-            </h2>
-            <p className="text-xs text-zinc-500">
-              Tổng cộng {state.requests.length} yêu cầu · Thiếu hàng:{' '}
-              {state.requests.filter((r) => !r.duocDapUngDayDu).length} lần
-            </p>
-          </div>
-        </div>
-        <div className="overflow-x-auto max-h-64">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-zinc-50 text-zinc-500 border-b border-zinc-200">
-              <tr>
-                <th className="px-4 py-2.5 font-semibold">Mã YC</th>
-                <th className="px-4 py-2.5 font-semibold">Phụ tùng</th>
-                <th className="px-4 py-2.5 font-semibold">Phiếu sửa chữa</th>
-                <th className="px-4 py-2.5 font-semibold text-right">Yêu cầu</th>
-                <th className="px-4 py-2.5 font-semibold text-right">Đáp ứng</th>
-                <th className="px-4 py-2.5 font-semibold">Kết quả</th>
-                <th className="px-4 py-2.5 font-semibold">Ghi chú</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {state.requests.slice(0, 12).map((req) => (
-                <tr key={req.id} className="hover:bg-zinc-50">
-                  <td className="px-4 py-2.5 font-mono font-semibold text-zinc-900">
-                    {req.maYeuCau}
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-zinc-700">{req.phuTungId}</td>
-                  <td className="px-4 py-2.5 font-mono text-zinc-700">{req.maPhieuSuaChua}</td>
-                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
-                    {req.soLuongYeuCau}
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-mono tabular-nums font-bold">
-                    {req.soLuongDapUng}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {req.duocDapUngDayDu ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                        <Check className="w-3.5 h-3.5" /> Đáp ứng đủ
-                      </span>
-                    ) : (
-                      <span className="text-red-700 font-semibold">Thiếu hàng (Stockout)</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-zinc-600">{req.ghiChu}</td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>

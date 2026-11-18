@@ -1,336 +1,180 @@
-export type UserRole = 'NHAN_VIEN_KHO' | 'QUAN_LY';
-
-export type InventoryStatus =
-  | 'DU_HANG'
-  | 'CAN_DAT_HANG'
-  | 'DUOI_SAFETY_STOCK'
-  | 'HET_HANG';
-
-export type TransactionType = 'NHAP_KHO' | 'XUAT_KHO' | 'DIEU_CHINH';
-
-export type ProposalStatus = 'CHO_DUYET' | 'DA_DUYET' | 'TU_CHOI' | 'DA_TAO_DON';
-
-export type PurchaseOrderStatus = 'DANG_DAT' | 'DA_NHAN' | 'DA_HUY';
-
-export type AlertType =
-  | 'CHAM_ROP'
-  | 'DUOI_SAFETY_STOCK'
+export type SheetDecisionStatus =
   | 'HET_HANG'
-  | 'DE_XUAT_CHO_DUYET'
-  | 'DON_HANG_TRE_HAN';
+  | 'DAT_NGAY'
+  | 'CHUAN_BI_DAT'
+  | 'DU_HANG';
 
-export type AlertSeverity = 'TRUNG_BINH' | 'CAO' | 'KHAN_CAP';
+export type TransactionType = 'NHAP_NCC' | 'XUAT_SUA_CHUA';
 
-export type DashboardPeriodFilter = 'day' | 'month' | 'quarter' | 'year';
+export type ConnectionSyncState =
+  | 'CONNECTED_RW'
+  | 'CONNECTED_RO'
+  | 'SYNCING'
+  | 'DISCONNECTED'
+  | 'SAVE_ERROR';
 
-export type KpiWindowDays = 30 | 60 | 90;
+export type DatabaseMode = 'FIREBASE_FIRESTORE' | 'READ_ONLY_SHEET';
 
-export type RoqMethod = 'eoq' | 'target';
-
-export interface NhaCungCap {
-  id: string;
-  maNCC: string;
-  tenNCC: string;
-  nguoiLienHe: string;
-  soDienThoai: string;
-  email: string;
-  diaChi: string;
-  leadTimeMacDinh: number;
-  ghiChu: string;
-}
-
-export interface PhuTung {
-  id: string;
-  maPhuTung: string;
-  tenPhuTung: string;
-  loaiPhuTung: string;
-  donViTinh: string;
-  giaNhap: number;
-  giaXuatThamKhao: number;
-  nhaCungCapId: string;
-  tonDauKy: number;
-  tonHienTai: number;
-  soLuongGiuCho: number;
-  phuongPhapSS: 'manual' | 'auto';
-  safetyStockThuCong: number | null;
-  phuongPhapLT: 'manual' | 'history';
-  leadTimeThuCong: number | null;
-  chiPhiDatHang: number | null; // S
-  chiPhiLuuKhoNam: number | null; // H
-  phuongPhapROQ: RoqMethod;
-  mucTonMucTieu: number | null;
-  quyCachDongGoi: number;
-  soLuongDatToiThieu: number;
-  ngayTao: string;
-  ngayCapNhat: string;
-}
-
-export interface NhapXuatKho {
-  id: string;
-  maGiaoDich: string;
-  phuTungId: string;
-  loaiGiaoDich: TransactionType;
-  soLuong: number; // positive for NHAP_KHO/XUAT_KHO, signed delta for DIEU_CHINH
-  tonSauGiaoDich: number;
-  donGia: number;
-  ngayGiaoDich: string; // ISO string
-  nhaCungCapId?: string;
-  maChungTu: string; // Ma don hang / Ma phieu bao hanh-sua chua / Ma kiem ke
-  lyDo: string;
-  nguoiThucHien: string;
-  vaiTro: UserRole;
-}
-
-export interface DonDatHang {
-  id: string;
-  maDonHang: string;
-  nhaCungCapId: string;
-  deXuatId?: string;
-  ngayDat: string;
-  ngayGiaoDuKien: string;
-  ngayNhanThucTe?: string;
-  leadTimeThucTe?: number;
-  tongGiaTri: number;
-  trangThai: PurchaseOrderStatus;
-  nguoiTao: string;
-  ghiChu: string;
-}
-
-export interface ChiTietDonHang {
-  id: string;
-  donDatHangId: string;
-  phuTungId: string;
-  soLuongDat: number;
-  soLuongDaNhan: number;
-  donGia: number;
-  thanhTien: number;
-}
-
-export interface DeXuatDatHang {
-  id: string;
-  maDeXuat: string;
-  phuTungId: string;
-  nhaCungCapId: string;
-  soLuongDeXuat: number;
-  phuongPhapTinh: RoqMethod | 'manual';
-  tonHienTaiLucTao: number;
-  inventoryPositionLucTao: number;
-  ropLucTao: number;
-  safetyStockLucTao: number;
-  eoqThamKhao: number | null;
-  giaTriDuKien: number;
-  trangThai: ProposalStatus;
-  nguonTao: 'TU_DONG' | 'THU_CONG';
-  nguoiTao: string;
-  ngayTao: string;
-  nguoiDuyet?: string;
-  ngayDuyet?: string;
-  lyDoTuChoi?: string;
-  ghiChu: string;
-}
-
-export interface CanhBaoTonKho {
-  id: string;
-  loaiCanhBao: AlertType;
-  mucDo: AlertSeverity;
-  phuTungId?: string;
-  deXuatId?: string;
-  donDatHangId?: string;
-  tieuDe: string;
-  noiDung: string;
-  thoiGianPhatSinh: string;
-  daDoc: boolean;
-  daXuLy: boolean;
-}
-
-export interface YeuCauPhuTung {
-  id: string;
-  maYeuCau: string;
-  phuTungId: string;
-  maPhieuSuaChua: string;
-  soLuongYeuCau: number;
-  soLuongDapUng: number;
-  duocDapUngDayDu: boolean;
-  ngayYeuCau: string;
-  ghiChu: string;
-}
-
-export interface EmailIntegrationConfig {
-  daCauHinh: boolean;
-  recipientEmail: string;
-  appsScriptWebhookUrl: string;
-  lanGuiCuoi?: string;
-}
-
-export interface GoogleSheetsConfig {
-  daKetNoi: boolean;
+export interface SystemStatus {
   spreadsheetId: string;
-  appsScriptUrl: string;
-  lanDongBoCuoi?: string;
-  trangThaiKetNoi: string;
+  sheetsReadMode: 'SERVICE_ACCOUNT_RO' | 'PUBLIC_GVIZ';
+  databaseMode: DatabaseMode;
+  databaseConfigured: boolean;
+  firebaseProjectId: string;
+  firestoreDatabaseId: string;
 }
 
-export interface CauHinhKPI {
-  kyPhanTichMacDinh: KpiWindowDays;
-  phuongPhapROQMacDinh: RoqMethod;
-  emailConfig: EmailIntegrationConfig;
-  googleSheetsConfig: GoogleSheetsConfig;
+export interface ThamSoConfig {
+  tuNgay: string;
+  tuNgayIso: string;
+  denNgay: string;
+  denNgayIso: string;
+  soNgayCuaKy: number;
+  ngayXemBaoCao: string;
+  ngayXemBaoCaoIso: string;
+  leadTimeMacDinh: number;
+  soNgayDuTruMongMuon: number;
+  soNgayCanhBaoTruoc: number;
 }
 
-export interface LichSuThaoTac {
-  id: string;
-  thoiGian: string;
-  nguoiThucHien: string;
-  vaiTro: UserRole;
-  hanhDong: string;
-  doiTuong: string;
-  chiTiet: string;
+export interface ThamSoOverride {
+  active: boolean;
+  tuNgayIso: string;
+  denNgayIso: string;
+  ngayXemBaoCaoIso: string;
+  leadTimeMacDinh: number;
+  soNgayDuTruMongMuon: number;
+  soNgayCanhBaoTruoc: number;
 }
 
-export interface DatabaseSchema {
-  PHU_TUNG: PhuTung[];
-  NHA_CUNG_CAP: NhaCungCap[];
-  NHAP_XUAT_KHO: NhapXuatKho[];
-  DON_DAT_HANG: DonDatHang[];
-  CHI_TIET_DON_HANG: ChiTietDonHang[];
-  DE_XUAT_DAT_HANG: DeXuatDatHang[];
-  CANH_BAO_TON_KHO: CanhBaoTonKho[];
-  YEU_CAU_PHU_TUNG: YeuCauPhuTung[];
-  CAU_HINH_KPI: CauHinhKPI;
-  LICH_SU_THAO_TAC: LichSuThaoTac[];
-}
-
-export interface PartKpiBreakdown {
-  phuTungId: string;
-  kpiWindowDays: KpiWindowDays;
-  // Stock & Position
-  tonHienTai: number;
-  tonKhaDung: number;
-  soLuongDangDat: number;
-  soLuongGiuCho: number;
-  inventoryPosition: number;
-  giaTriTonKho: number;
-  // A. Average Daily Demand
-  tongTieuThuTrongKy: number;
-  add: number;
-  nhuCauToiDaNgay: number;
-  addFormula: string;
-  // B. Lead Time
-  leadTime: number;
-  leadTimeToiDa: number;
-  leadTimeNguon: 'Thủ công' | 'Trung bình lịch sử đơn hàng' | 'Mặc định nhà cung cấp';
-  leadTimeSampleCount: number;
-  // C. Safety Stock
-  safetyStock: number;
-  safetyStockNguon: 'Thủ công' | 'Tự động (Max - Avg)';
-  safetyStockFormula: string;
-  // D. Reorder Point
-  rop: number;
-  ropFormula: string;
-  // E. EOQ
-  annualDemandD: number;
-  eoq: number | null;
-  eoqDuDuLieu: boolean;
-  eoqThongBao: string;
-  eoqFormula: string;
-  // F. ROQ
-  roq: number;
-  roqPhuongPhap: RoqMethod;
-  roqFormula: string;
-  // Turnover & DOH per part
-  giaVonXuatTrongKy: number;
-  inventoryTurnover: number | null;
-  doh: number | null;
-  // Status flags
-  trangThai: InventoryStatus;
-  canDatHang: boolean;
-  duoiSafetyStock: boolean;
-  hetHang: boolean;
-}
-
-export interface HydratedPart extends PhuTung {
-  nhaCungCap?: NhaCungCap;
-  kpi: PartKpiBreakdown;
-}
-
-export interface HydratedProposal extends DeXuatDatHang {
-  phuTung?: HydratedPart;
-  nhaCungCap?: NhaCungCap;
-}
-
-export interface HydratedOrder extends DonDatHang {
-  nhaCungCap?: NhaCungCap;
-  chiTiet: Array<ChiTietDonHang & { phuTung?: PhuTung }>;
-  isOverdue: boolean;
-  isDueSoon: boolean;
-}
-
-export interface DashboardTimeSeriesPoint {
-  label: string;
-  dateKey: string;
-  nhap: number;
-  xuat: number;
-  tonCuoiKy: number;
-}
-
-export interface TopUsedPartPoint {
-  phuTungId: string;
+export interface CatalogPart {
+  rowIndex: number; // 1-based row index in "Danh mục phụ tùng" (0 if website custom addition)
   maPhuTung: string;
   tenPhuTung: string;
-  soLuongSuDung: number;
-  giaTriSuDung: number;
+  donViTinh: string;
+  dinhMucToiThieu: number;
+  ghiChu: string;
+  nhomPhuTung: string;
+  giaNhapThamChieu: number;
+  giaBanThamChieu: number;
+  maNhaCungCapMacDinh: string;
+  leadTimeRieng: number | null;
+  tonDauKy: number;
+  slDangDatChuaNhan: number;
+  source?: 'GOOGLE_SHEET' | 'WEBSITE_DB';
 }
 
-export interface StatusDistributionPoint {
-  status: InventoryStatus;
-  label: string;
-  count: number;
-  color: string;
+export interface SheetTransaction {
+  id?: string;
+  seq?: number;
+  rowIndex: number;
+  maGiaoDich: string;
+  ngayGiaoDich: string; // display dd/MM/yyyy
+  ngayIso: string; // YYYY-MM-DD for sorting & charts
+  loaiGiaoDich: TransactionType;
+  maPhuTung: string;
+  soLuong: number;
+  donGiaGiaoDich: number | null;
+  maNhaCungCap: string;
+  nhanVienThucHien: string;
+  maDonDatHang: string;
+  ghiChu: string;
+  clientRequestId?: string;
+  source?: 'GOOGLE_SHEET_SEED' | 'WEB_APP';
+  createdAt?: string;
 }
 
-export interface DashboardSummary {
-  periodFilter: DashboardPeriodFilter;
-  periodLabel: string;
-  periodDays: number;
-  kpiWindowDays: KpiWindowDays;
-  // 10 Dashboard KPIs
-  tongMaPhuTung: number;
-  tongSoLuongTon: number;
+export interface SheetIndicatorRow {
+  maPhuTung: string;
+  tenPhuTung: string;
+  tongNhap: number;
+  tongXuat: number;
+  tonHienTai: number;
+  xuatTrongKy: number;
+  tieuThuTBNgay: number;
+  soNgayConDuDung: number | null;
+  nhuCauLucChoHang: number;
+  duDungLucCho: string;
+  tonAnToan: number;
+  diemDatHang: number; // ROP
+  soNgayToiDiemDat: number | null;
+  ngayDatMuonNhat: string;
+  slDeXuatDat: number;
+  quyetDinhRaw: string;
+}
+
+export interface MergedInventoryItem {
+  catalog: CatalogPart;
+  indicator: SheetIndicatorRow;
+  leadTimeApDung: number;
+  giaTriTonKho: number;
+  trangThai: SheetDecisionStatus;
+  trangThaiLabel: string;
+  uuTien: number; // 0 = HET_HANG, 1 = DAT_NGAY, 2 = CHUAN_BI_DAT, 3 = DU_HANG
+}
+
+export interface DashboardKPIs {
+  tongLoaiPhuTung: number;
+  tongSoLuongTonKho: number;
+  soLoaiCanDatNgay: number;
+  soLoaiSapDenDiemDat: number;
+  soLoaiHetHang: number;
   tongGiaTriTonKho: number;
-  soPhuTungCanDatHang: number;
-  soPhuTungHetHang: number;
-  soPhuTungDuoiSafetyStock: number;
-  tongNhapTrongKy: number;
-  tongXuatTrongKy: number;
-  giaVonXuatTrongKy: number;
-  giaTriTonBinhQuan: number;
-  inventoryTurnover: number | null;
-  inventoryTurnoverFormula: string;
-  doh: number | null;
-  dohFormula: string;
-  tongGiaTriDeXuatDatHang: number;
-  // Stockout Rate (5.I)
-  tongYeuCauPhuTung: number;
-  soLanThieuHang: number;
-  stockoutRate: number | null;
-  stockoutFormula: string;
-  // Charts
-  nhapXuatTonSeries: DashboardTimeSeriesPoint[];
-  top5SuDung: TopUsedPartPoint[];
-  phanBoTrangThai: StatusDistributionPoint[];
-  xuHuongTieuThu: Array<{ label: string; tieuThu: number; trungBinh: number }>;
+  tongSoLuongDangDat: number;
+  soNgayTonKhoTrungBinh: number | null;
 }
 
-export interface AppStateResponse {
-  parts: HydratedPart[];
-  suppliers: NhaCungCap[];
-  transactions: NhapXuatKho[];
-  proposals: HydratedProposal[];
-  orders: HydratedOrder[];
-  alerts: CanhBaoTonKho[];
-  requests: YeuCauPhuTung[];
-  config: CauHinhKPI;
-  auditLogs: LichSuThaoTac[];
-  dashboard: DashboardSummary;
-  serverTime: string;
+export interface DashboardCharts {
+  topTieuThu: Array<{
+    maPhuTung: string;
+    tenPhuTung: string;
+    xuatTrongKy: number;
+    tongXuat: number;
+  }>;
+  tonSoVoiRop: Array<{
+    maPhuTung: string;
+    tenPhuTung: string;
+    tonHienTai: number;
+    rop: number;
+  }>;
+  phanBoTrangThai: Array<{
+    status: SheetDecisionStatus;
+    label: string;
+    count: number;
+    color: string;
+  }>;
+  giaTriTonTheoPhuTung: Array<{
+    maPhuTung: string;
+    tenPhuTung: string;
+    giaTriTon: number;
+  }>;
+  xuHuongNhapXuat: Array<{
+    ngay: string;
+    nhap: number;
+    xuat: number;
+  }>;
+}
+
+export interface GoogleSheetReferenceResponse {
+  spreadsheetId: string;
+  sheetsReadMode: 'SERVICE_ACCOUNT_RO' | 'PUBLIC_GVIZ';
+  syncedAt: string;
+  thamSo: ThamSoConfig;
+  sheetCatalog: CatalogPart[];
+  sheetInitialTransactions: SheetTransaction[];
+}
+
+export interface SheetsStateResponse {
+  spreadsheetId: string;
+  connectionMode: 'DATABASE_RW' | 'READ_ONLY_NO_DB';
+  databaseMode: DatabaseMode;
+  sheetsReadMode: 'SERVICE_ACCOUNT_RO' | 'PUBLIC_GVIZ';
+  thamSoSource?: 'GOOGLE_SHEET' | 'FIRESTORE_OVERRIDE';
+  systemStatus: SystemStatus;
+  syncedAt: string;
+  thamSo: ThamSoConfig;
+  items: MergedInventoryItem[];
+  transactions: SheetTransaction[];
+  kpis: DashboardKPIs;
+  charts: DashboardCharts;
 }

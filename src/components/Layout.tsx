@@ -1,63 +1,79 @@
 import React, { useState } from 'react';
 import {
-  AlertTriangle,
   ArrowLeftRight,
   BarChart3,
-  Bell,
   Calculator,
-  ClipboardList,
   Database,
   Menu,
   Package,
+  RefreshCw,
   Search,
-  ShieldCheck,
-  User,
   X,
 } from 'lucide-react';
-import type { CanhBaoTonKho, UserRole } from '../types/inventory';
+import type { ConnectionSyncState } from '../types/inventory';
 import { formatDateTime } from '../lib/format';
 
-export type NavTab =
-  | 'dashboard'
-  | 'parts'
-  | 'transactions'
-  | 'kpi'
-  | 'proposals'
-  | 'alerts'
-  | 'settings';
+export type NavTab = 'dashboard' | 'parts' | 'transactions' | 'kpi' | 'settings';
 
 interface LayoutProps {
   activeTab: NavTab;
   onTabChange: (tab: NavTab) => void;
-  role: UserRole;
-  onRoleChange: (role: UserRole) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
-  alerts: CanhBaoTonKho[];
-  pendingProposalsCount: number;
-  onMarkAlertsRead: () => void;
+  syncState: ConnectionSyncState;
+  lastSyncedAt: string | null;
+  onSyncNow: () => void;
+  urgentCount: number;
   onQuickTransaction: () => void;
   children: React.ReactNode;
+}
+
+function getSyncBadgeMeta(syncState: ConnectionSyncState): {
+  label: string;
+  className: string;
+} {
+  switch (syncState) {
+    case 'SYNCING':
+      return {
+        label: 'Đang đồng bộ...',
+        className: 'bg-amber-50 border-amber-300 text-amber-800',
+      };
+    case 'CONNECTED_RW':
+      return {
+        label: 'Firebase Firestore · Đồng bộ thời gian thực',
+        className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+      };
+    case 'CONNECTED_RO':
+      return {
+        label: 'Chỉ đọc Google Sheets',
+        className: 'bg-amber-50 border-amber-200 text-amber-800',
+      };
+    case 'SAVE_ERROR':
+      return {
+        label: 'Lỗi ghi Firebase',
+        className: 'bg-red-50 border-red-200 text-red-800',
+      };
+    case 'DISCONNECTED':
+      return {
+        label: 'Mất kết nối dữ liệu',
+        className: 'bg-red-50 border-red-300 text-red-800',
+      };
+  }
 }
 
 export function Layout({
   activeTab,
   onTabChange,
-  role,
-  onRoleChange,
   searchQuery,
   onSearchChange,
-  alerts,
-  pendingProposalsCount,
-  onMarkAlertsRead,
+  syncState,
+  lastSyncedAt,
+  onSyncNow,
+  urgentCount,
   onQuickTransaction,
   children,
 }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-
-  const unreadAlerts = alerts.filter((a) => !a.daDoc);
-  const activeAlerts = alerts.filter((a) => !a.daXuLy);
 
   const navItems: Array<{
     id: NavTab;
@@ -65,28 +81,19 @@ export function Layout({
     icon: React.ComponentType<{ className?: string }>;
     badge?: number;
   }> = [
-    { id: 'dashboard', label: 'Tổng quan', icon: BarChart3 },
+    {
+      id: 'dashboard',
+      label: 'Tổng quan tồn kho',
+      icon: BarChart3,
+      badge: urgentCount > 0 ? urgentCount : undefined,
+    },
     { id: 'parts', label: 'Danh mục phụ tùng', icon: Package },
     { id: 'transactions', label: 'Nhập – Xuất kho', icon: ArrowLeftRight },
-    { id: 'kpi', label: 'Phân tích KPI & Công thức', icon: Calculator },
-    {
-      id: 'proposals',
-      label: 'Đề xuất & Đơn đặt hàng',
-      icon: ClipboardList,
-      badge: pendingProposalsCount > 0 ? pendingProposalsCount : undefined,
-    },
-    {
-      id: 'alerts',
-      label: 'Thông báo & Lịch sử',
-      icon: AlertTriangle,
-      badge: activeAlerts.length > 0 ? activeAlerts.length : undefined,
-    },
-    { id: 'settings', label: 'Nhà cung cấp & Đồng bộ', icon: Database },
+    { id: 'kpi', label: 'Chỉ số & Tham số', icon: Calculator },
+    { id: 'settings', label: 'Firebase & Đồng bộ', icon: Database },
   ];
 
-  const userName =
-    role === 'QUAN_LY' ? 'Nguyễn Thị Lan' : 'Trần Văn Nam';
-  const roleLabel = role === 'QUAN_LY' ? 'Quản lý trung tâm' : 'Nhân viên kho';
+  const syncMeta = getSyncBadgeMeta(syncState);
 
   const handleNavClick = (id: NavTab) => {
     onTabChange(id);
@@ -95,7 +102,6 @@ export function Layout({
 
   return (
     <div className="min-h-screen flex bg-[#F6F7F9] text-zinc-900">
-      {/* Mobile Sidebar Backdrop */}
       {mobileMenuOpen && (
         <div
           className="fixed inset-0 z-40 bg-zinc-950/50 lg:hidden"
@@ -109,7 +115,6 @@ export function Layout({
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Brand Lockup */}
         <div className="h-16 px-5 flex items-center justify-between border-b border-zinc-800 shrink-0">
           <button
             type="button"
@@ -127,7 +132,7 @@ export function Layout({
                 strokeLinejoin="round"
               >
                 <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l-.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </div>
             <div>
@@ -135,7 +140,7 @@ export function Layout({
                 TIẾN THU
               </div>
               <div className="text-[11px] text-zinc-400 leading-tight mt-0.5">
-                Dịch vụ & Bảo hành
+                Kho Phụ Tùng · Nội Bộ
               </div>
             </div>
           </button>
@@ -149,7 +154,6 @@ export function Layout({
           </button>
         </div>
 
-        {/* Navigation Links */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -178,7 +182,7 @@ export function Layout({
                     className={`text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded font-semibold shrink-0 ${
                       isActive
                         ? 'bg-white/20 text-white'
-                        : 'bg-amber-500/20 text-amber-300'
+                        : 'bg-red-500/20 text-red-300'
                     }`}
                   >
                     {item.badge}
@@ -189,60 +193,20 @@ export function Layout({
           })}
         </nav>
 
-        {/* Role Switcher Panel */}
-        <div className="p-4 border-t border-zinc-800 bg-zinc-950/40 shrink-0">
-          <div className="text-[11px] font-medium text-zinc-400 mb-2">
-            Vai trò vận hành (Phân quyền)
+        <div className="p-4 border-t border-zinc-800 bg-zinc-950/50 shrink-0 space-y-1.5">
+          <div className="text-[11px] font-semibold text-zinc-200">
+            Trung tâm Dịch vụ Tiến Thu
           </div>
-          <div className="grid grid-cols-2 gap-1 p-1 bg-zinc-800 rounded-lg">
-            <button
-              type="button"
-              onClick={() => onRoleChange('NHAN_VIEN_KHO')}
-              className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-                role === 'NHAN_VIEN_KHO'
-                  ? 'bg-amber-500 text-zinc-950 font-semibold'
-                  : 'text-zinc-300 hover:text-white'
-              }`}
-            >
-              Nhân viên kho
-            </button>
-            <button
-              type="button"
-              onClick={() => onRoleChange('QUAN_LY')}
-              className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-                role === 'QUAN_LY'
-                  ? 'bg-amber-500 text-zinc-950 font-semibold'
-                  : 'text-zinc-300 hover:text-white'
-              }`}
-            >
-              Quản lý
-            </button>
-          </div>
-          <div className="mt-3 flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
-              {role === 'QUAN_LY' ? (
-                <ShieldCheck className="w-4 h-4 text-amber-400" />
-              ) : (
-                <User className="w-4 h-4 text-zinc-300" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-white truncate">
-                {userName}
-              </div>
-              <div className="text-[11px] text-zinc-400 truncate">
-                {roleLabel}
-              </div>
-            </div>
+          <div className="text-[11px] text-zinc-400 leading-relaxed">
+            Danh mục đọc từ Google Sheets · Giao dịch lưu trên Firebase Firestore & đồng bộ tức thì đa thiết bị.
           </div>
         </div>
       </aside>
 
       {/* Main Content Shell */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Bar */}
-        <header className="h-16 bg-white border-b border-zinc-200 px-4 lg:px-6 flex items-center justify-between gap-4 sticky top-0 z-30 shrink-0">
-          <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
+        <header className="min-h-16 py-2 bg-white border-b border-zinc-200 px-4 lg:px-6 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30 shrink-0">
+          <div className="flex items-center gap-3 flex-1 min-w-[220px] max-w-md">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
@@ -257,13 +221,8 @@ export function Layout({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && searchQuery.trim() && activeTab !== 'parts') {
-                    onTabChange('parts');
-                  }
-                }}
-                placeholder="Tìm mã phụ tùng (PT001), tên phụ tùng, nhà cung cấp..."
-                className="w-full h-10 pl-9 pr-8 text-sm bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:bg-white focus:border-orange-500 transition-colors"
+                placeholder="Tìm mã PT001, tên phụ tùng..."
+                className="w-full h-9 pl-9 pr-8 text-xs sm:text-sm bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:bg-white focus:border-orange-500 transition-colors"
               />
               {searchQuery && (
                 <button
@@ -278,109 +237,46 @@ export function Layout({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Notification Bell */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setNotifOpen((v) => !v)}
-                className="relative h-10 w-10 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 flex items-center justify-center text-zinc-700 transition-colors"
-                aria-label="Trung tâm thông báo"
-              >
-                <Bell className="w-4 h-4" />
-                {unreadAlerts.length > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-mono font-bold flex items-center justify-center tabular-nums">
-                    {unreadAlerts.length > 9 ? '9+' : unreadAlerts.length}
-                  </span>
-                )}
-              </button>
-
-              {notifOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setNotifOpen(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-zinc-200 rounded-xl shadow-lg z-50 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-zinc-200 flex items-center justify-between">
-                      <span className="text-sm font-semibold text-zinc-900">
-                        Cảnh báo & Thông báo ({activeAlerts.length})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onMarkAlertsRead();
-                        }}
-                        className="text-xs font-medium text-orange-600 hover:text-orange-700"
-                      >
-                        Đánh dấu đã đọc
-                      </button>
-                    </div>
-                    <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100">
-                      {alerts.slice(0, 6).map((alert) => (
-                        <div
-                          key={alert.id}
-                          className={`px-4 py-3 text-xs ${
-                            alert.daDoc ? 'bg-white' : 'bg-amber-50/50'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span
-                              className={`font-semibold ${
-                                alert.mucDo === 'KHAN_CAP'
-                                  ? 'text-red-700'
-                                  : alert.mucDo === 'CAO'
-                                  ? 'text-orange-700'
-                                  : 'text-amber-700'
-                              }`}
-                            >
-                              {alert.tieuDe}
-                            </span>
-                            <span className="text-[11px] text-zinc-400 shrink-0 tabular-nums">
-                              {formatDateTime(alert.thoiGianPhatSinh)}
-                            </span>
-                          </div>
-                          <p className="text-zinc-600 mt-1 leading-relaxed">
-                            {alert.noiDung}
-                          </p>
-                        </div>
-                      ))}
-                      {alerts.length === 0 && (
-                        <div className="px-4 py-6 text-center text-xs text-zinc-500">
-                          Không có thông báo mới.
-                        </div>
-                      )}
-                    </div>
-                    <div className="px-4 py-2.5 bg-zinc-50 border-t border-zinc-200 text-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNotifOpen(false);
-                          onTabChange('alerts');
-                        }}
-                        className="text-xs font-semibold text-orange-600 hover:text-orange-700"
-                      >
-                        Xem tất cả thông báo & lịch sử
-                      </button>
-                    </div>
-                  </div>
-                </>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <div
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold inline-flex items-center gap-2 ${syncMeta.className}`}
+              title={
+                lastSyncedAt
+                  ? `Cập nhật gần nhất: ${formatDateTime(lastSyncedAt)}`
+                  : undefined
+              }
+            >
+              <span className="whitespace-nowrap">{syncMeta.label}</span>
+              {lastSyncedAt && (
+                <span className="hidden xl:inline text-[11px] opacity-80 font-mono tabular-nums">
+                  · {new Date(lastSyncedAt).toLocaleTimeString('vi-VN')}
+                </span>
               )}
             </div>
 
-            {/* Primary Action CTA */}
+            <button
+              type="button"
+              disabled={syncState === 'SYNCING'}
+              onClick={onSyncNow}
+              className="h-9 px-3 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 disabled:opacity-60 text-xs font-semibold text-zinc-700 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${syncState === 'SYNCING' ? 'animate-spin' : ''}`}
+              />
+              <span>Làm mới dữ liệu</span>
+            </button>
+
             <button
               type="button"
               onClick={onQuickTransaction}
-              className="h-10 px-4 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs sm:text-sm font-semibold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
+              className="h-9 px-3.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             >
-              <ArrowLeftRight className="w-4 h-4 shrink-0" />
+              <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
               <span>Nhập / Xuất kho</span>
             </button>
           </div>
         </header>
 
-        {/* Page Viewport */}
         <main className="flex-1 p-4 lg:p-6 max-w-[1440px] w-full mx-auto">
           {children}
         </main>

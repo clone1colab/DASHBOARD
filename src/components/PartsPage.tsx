@@ -1,151 +1,151 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AlertOctagon,
   AlertTriangle,
   CheckCircle2,
   Eye,
   Pencil,
   Plus,
-  Trash2,
   X,
 } from 'lucide-react';
 import type {
-  AppStateResponse,
-  HydratedPart,
-  InventoryStatus,
-  PhuTung,
-  UserRole,
+  MergedInventoryItem,
+  SheetDecisionStatus,
+  SheetsStateResponse,
 } from '../types/inventory';
-import { formatCurrency, formatNumber, getStatusMeta } from '../lib/format';
+import { formatCurrency, formatNumber, getSheetStatusMeta } from '../lib/format';
 
 interface PartsPageProps {
-  state: AppStateResponse;
-  role: UserRole;
+  state: SheetsStateResponse;
   searchQuery: string;
-  onSelectPart: (part: HydratedPart) => void;
-  onCreatePart: (payload: Partial<PhuTung>) => Promise<void>;
-  onUpdatePart: (id: string, payload: Partial<PhuTung>) => Promise<void>;
-  onDeletePart: (id: string) => Promise<void>;
+  onSelectItem: (item: MergedInventoryItem) => void;
+  onUpdatePart: (
+    maPhuTung: string,
+    payload: {
+      tenPhuTung: string;
+      donViTinh: string;
+      dinhMucToiThieu: number;
+      ghiChu: string;
+      nhomPhuTung?: string;
+      giaNhapThamChieu: number;
+      giaBanThamChieu: number;
+      maNhaCungCapMacDinh: string;
+      leadTimeRieng: number | null;
+      slDangDatChuaNhan?: number;
+    }
+  ) => Promise<void>;
+  onCreatePart: (payload: {
+    maPhuTung: string;
+    tenPhuTung: string;
+    donViTinh: string;
+    dinhMucToiThieu: number;
+    ghiChu: string;
+    nhomPhuTung: string;
+    giaNhapThamChieu: number;
+    giaBanThamChieu: number;
+    maNhaCungCapMacDinh: string;
+    leadTimeRieng: number | null;
+    tonDauKy: number;
+  }) => Promise<void>;
 }
-
-const DEFAULT_CATEGORIES = [
-  'Hệ thống phanh',
-  'Động cơ & Truyền động',
-  'Dầu nhớt & Lọc',
-  'Điện & Đánh lửa',
-  'Lốp & Vành',
-  'Phụ kiện thân vỏ',
-];
 
 export function PartsPage({
   state,
-  role,
   searchQuery,
-  onSelectPart,
-  onCreatePart,
+  onSelectItem,
   onUpdatePart,
-  onDeletePart,
+  onCreatePart,
 }: PartsPageProps) {
-  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | InventoryStatus>('ALL');
+  const [groupFilter, setGroupFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | SheetDecisionStatus>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingPart, setEditingPart] = useState<HydratedPart | null>(null);
+  const [editingItem, setEditingItem] = useState<MergedInventoryItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     maPhuTung: '',
     tenPhuTung: '',
-    loaiPhuTung: DEFAULT_CATEGORIES[0],
     donViTinh: 'Cái',
-    giaNhap: 80000,
-    giaXuatThamKhao: 120000,
-    nhaCungCapId: state.suppliers[0]?.id || 'NCC01',
-    tonDauKy: 20,
-    soLuongGiuCho: 0,
-    phuongPhapSS: 'manual' as 'manual' | 'auto',
-    safetyStockThuCong: 5,
-    phuongPhapLT: 'manual' as 'manual' | 'history',
-    leadTimeThuCong: 5,
-    chiPhiDatHang: '150000',
-    chiPhiLuuKhoNam: '24000',
-    phuongPhapROQ: 'eoq' as 'eoq' | 'target',
-    mucTonMucTieu: '40',
-    quyCachDongGoi: 5,
-    soLuongDatToiThieu: 10,
+    dinhMucToiThieu: 5,
+    nhomPhuTung: '',
+    giaNhapThamChieu: 0,
+    giaBanThamChieu: 0,
+    maNhaCungCapMacDinh: 'NCC001',
+    leadTimeRieng: '',
+    tonDauKy: 0,
+    slDangDatChuaNhan: 0,
+    ghiChu: '',
   });
 
-  const categories = useMemo(() => {
-    const set = new Set(DEFAULT_CATEGORIES);
-    for (const p of state.parts) set.add(p.loaiPhuTung);
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of state.items) {
+      if (it.catalog.nhomPhuTung) set.add(it.catalog.nhomPhuTung);
+    }
     return Array.from(set);
-  }, [state.parts]);
+  }, [state.items]);
 
-  const filteredParts = useMemo(() => {
+  const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return state.parts.filter((p) => {
-      if (categoryFilter !== 'ALL' && p.loaiPhuTung !== categoryFilter) return false;
-      if (statusFilter !== 'ALL' && p.kpi.trangThai !== statusFilter) return false;
+    return state.items.filter((it) => {
+      if (groupFilter !== 'ALL' && it.catalog.nhomPhuTung !== groupFilter) return false;
+      if (statusFilter !== 'ALL' && it.trangThai !== statusFilter) return false;
       if (!q) return true;
       return (
-        p.maPhuTung.toLowerCase().includes(q) ||
-        p.tenPhuTung.toLowerCase().includes(q) ||
-        p.loaiPhuTung.toLowerCase().includes(q) ||
-        (p.nhaCungCap?.tenNCC.toLowerCase().includes(q) ?? false)
+        it.catalog.maPhuTung.toLowerCase().includes(q) ||
+        it.catalog.tenPhuTung.toLowerCase().includes(q) ||
+        it.catalog.nhomPhuTung.toLowerCase().includes(q) ||
+        it.catalog.maNhaCungCapMacDinh.toLowerCase().includes(q)
       );
     });
-  }, [state.parts, categoryFilter, statusFilter, searchQuery]);
+  }, [state.items, groupFilter, statusFilter, searchQuery]);
 
   const openAddModal = () => {
-    setEditingPart(null);
+    setEditingItem(null);
     setErrorMsg(null);
+    const existingCodes = new Set(
+      state.items.map((it) => it.catalog.maPhuTung.toUpperCase())
+    );
+    let nextNum = state.items.length + 1;
+    while (existingCodes.has(`PT00${nextNum}`)) {
+      nextNum++;
+    }
     setForm({
-      maPhuTung: `PT0${state.parts.length + 1}`,
+      maPhuTung: `PT00${nextNum}`,
       tenPhuTung: '',
-      loaiPhuTung: DEFAULT_CATEGORIES[0],
       donViTinh: 'Cái',
-      giaNhap: 80000,
-      giaXuatThamKhao: 120000,
-      nhaCungCapId: state.suppliers[0]?.id || 'NCC01',
-      tonDauKy: 20,
-      soLuongGiuCho: 0,
-      phuongPhapSS: 'manual',
-      safetyStockThuCong: 5,
-      phuongPhapLT: 'manual',
-      leadTimeThuCong: 5,
-      chiPhiDatHang: '150000',
-      chiPhiLuuKhoNam: '24000',
-      phuongPhapROQ: 'eoq',
-      mucTonMucTieu: '40',
-      quyCachDongGoi: 5,
-      soLuongDatToiThieu: 10,
+      dinhMucToiThieu: 5,
+      nhomPhuTung: groups[0] || 'Phụ tùng bảo dưỡng',
+      giaNhapThamChieu: 50000,
+      giaBanThamChieu: 75000,
+      maNhaCungCapMacDinh: 'NCC001',
+      leadTimeRieng: '',
+      tonDauKy: 0,
+      slDangDatChuaNhan: 0,
+      ghiChu: '',
     });
     setModalOpen(true);
   };
 
-  const openEditModal = (part: HydratedPart, e: React.MouseEvent) => {
+  const openEditModal = (it: MergedInventoryItem, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditingPart(part);
+    const c = it.catalog;
+    setEditingItem(it);
     setErrorMsg(null);
     setForm({
-      maPhuTung: part.maPhuTung,
-      tenPhuTung: part.tenPhuTung,
-      loaiPhuTung: part.loaiPhuTung,
-      donViTinh: part.donViTinh,
-      giaNhap: part.giaNhap,
-      giaXuatThamKhao: part.giaXuatThamKhao,
-      nhaCungCapId: part.nhaCungCapId,
-      tonDauKy: part.tonDauKy,
-      soLuongGiuCho: part.soLuongGiuCho,
-      phuongPhapSS: part.phuongPhapSS,
-      safetyStockThuCong: part.safetyStockThuCong ?? part.kpi.safetyStock,
-      phuongPhapLT: part.phuongPhapLT,
-      leadTimeThuCong: part.leadTimeThuCong ?? part.kpi.leadTime,
-      chiPhiDatHang: part.chiPhiDatHang !== null ? String(part.chiPhiDatHang) : '',
-      chiPhiLuuKhoNam: part.chiPhiLuuKhoNam !== null ? String(part.chiPhiLuuKhoNam) : '',
-      phuongPhapROQ: part.phuongPhapROQ,
-      mucTonMucTieu: part.mucTonMucTieu !== null ? String(part.mucTonMucTieu) : '',
-      quyCachDongGoi: part.quyCachDongGoi,
-      soLuongDatToiThieu: part.soLuongDatToiThieu,
+      maPhuTung: c.maPhuTung,
+      tenPhuTung: c.tenPhuTung,
+      donViTinh: c.donViTinh,
+      dinhMucToiThieu: c.dinhMucToiThieu,
+      nhomPhuTung: c.nhomPhuTung,
+      giaNhapThamChieu: c.giaNhapThamChieu,
+      giaBanThamChieu: c.giaBanThamChieu,
+      maNhaCungCapMacDinh: c.maNhaCungCapMacDinh || 'NCC001',
+      leadTimeRieng: c.leadTimeRieng !== null ? String(c.leadTimeRieng) : '',
+      tonDauKy: c.tonDauKy,
+      slDangDatChuaNhan: c.slDangDatChuaNhan,
+      ghiChu: c.ghiChu,
     });
     setModalOpen(true);
   };
@@ -155,42 +155,41 @@ export function PartsPage({
     setErrorMsg(null);
     setSubmitting(true);
     try {
-      const payload: Partial<PhuTung> = {
-        maPhuTung: form.maPhuTung,
-        tenPhuTung: form.tenPhuTung,
-        loaiPhuTung: form.loaiPhuTung,
-        donViTinh: form.donViTinh,
-        giaNhap: Number(form.giaNhap),
-        giaXuatThamKhao: Number(form.giaXuatThamKhao),
-        nhaCungCapId: form.nhaCungCapId,
-        tonDauKy: Number(form.tonDauKy),
-        soLuongGiuCho: Number(form.soLuongGiuCho),
-        chiPhiDatHang: form.chiPhiDatHang ? Number(form.chiPhiDatHang) : null,
-        chiPhiLuuKhoNam: form.chiPhiLuuKhoNam ? Number(form.chiPhiLuuKhoNam) : null,
-        phuongPhapROQ: form.phuongPhapROQ,
-        mucTonMucTieu: form.mucTonMucTieu ? Number(form.mucTonMucTieu) : null,
-        quyCachDongGoi: Number(form.quyCachDongGoi),
-        soLuongDatToiThieu: Number(form.soLuongDatToiThieu),
-      };
-
-      // Only attach threshold changes if new part OR Manager role
-      if (!editingPart || role === 'QUAN_LY') {
-        payload.phuongPhapSS = form.phuongPhapSS;
-        payload.safetyStockThuCong =
-          form.phuongPhapSS === 'manual' ? Number(form.safetyStockThuCong) : null;
-        payload.phuongPhapLT = form.phuongPhapLT;
-        payload.leadTimeThuCong =
-          form.phuongPhapLT === 'manual' ? Number(form.leadTimeThuCong) : null;
-      }
-
-      if (editingPart) {
-        await onUpdatePart(editingPart.id, payload);
+      const leadTimeVal =
+        form.leadTimeRieng.trim() === '' ? null : Number(form.leadTimeRieng);
+      if (editingItem) {
+        await onUpdatePart(editingItem.catalog.maPhuTung, {
+          tenPhuTung: form.tenPhuTung,
+          donViTinh: form.donViTinh,
+          dinhMucToiThieu: Number(form.dinhMucToiThieu),
+          ghiChu: form.ghiChu,
+          nhomPhuTung: form.nhomPhuTung,
+          giaNhapThamChieu: Number(form.giaNhapThamChieu),
+          giaBanThamChieu: Number(form.giaBanThamChieu),
+          maNhaCungCapMacDinh: form.maNhaCungCapMacDinh || 'NCC001',
+          leadTimeRieng: leadTimeVal,
+          slDangDatChuaNhan: Number(form.slDangDatChuaNhan),
+        });
       } else {
-        await onCreatePart(payload);
+        await onCreatePart({
+          maPhuTung: form.maPhuTung,
+          tenPhuTung: form.tenPhuTung,
+          donViTinh: form.donViTinh,
+          dinhMucToiThieu: Number(form.dinhMucToiThieu),
+          ghiChu: form.ghiChu,
+          nhomPhuTung: form.nhomPhuTung,
+          giaNhapThamChieu: Number(form.giaNhapThamChieu),
+          giaBanThamChieu: Number(form.giaBanThamChieu),
+          maNhaCungCapMacDinh: form.maNhaCungCapMacDinh || 'NCC001',
+          leadTimeRieng: leadTimeVal,
+          tonDauKy: Number(form.tonDauKy),
+        });
       }
       setModalOpen(false);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Có lỗi xảy ra.');
+      setErrorMsg(
+        err instanceof Error ? err.message : 'Không thể lưu phụ tùng vào Database máy chủ.'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -198,14 +197,13 @@ export function PartsPage({
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
-            Danh mục phụ tùng ({filteredParts.length})
+            Danh mục phụ tùng ({filteredItems.length})
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
-            Nhấn vào từng mã phụ tùng để xem chi tiết KPI, công thức kiểm tra và biểu đồ biến động tồn kho
+            Dữ liệu gốc đọc từ Google Sheets (<span className="font-mono text-zinc-700">Danh mục phụ tùng</span>) · Thêm/sửa trên web lưu vào Firebase Firestore · Nhấn vào dòng để xem hồ sơ chi tiết
           </p>
         </div>
 
@@ -219,34 +217,36 @@ export function PartsPage({
         </button>
       </div>
 
-      {/* Filters Bar */}
+      {/* Filter bar */}
       <div className="bg-white border border-zinc-200 rounded-xl p-3.5 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-zinc-600 whitespace-nowrap">
-            Loại phụ tùng:
-          </label>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-9 px-3 rounded-lg border border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-800 focus:outline-none focus:border-orange-500"
-          >
-            <option value="ALL">Tất cả loại</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
-        </div>
+        {groups.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold text-zinc-600 whitespace-nowrap">
+              Nhóm phụ tùng:
+            </label>
+            <select
+              value={groupFilter}
+              onChange={(e) => setGroupFilter(e.target.value)}
+              className="h-9 px-3 rounded-lg border border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-800 focus:outline-none focus:border-orange-500"
+            >
+              <option value="ALL">Tất cả nhóm</option>
+              {groups.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex items-center gap-1 p-1 bg-zinc-100 rounded-lg overflow-x-auto">
           {(
             [
               { id: 'ALL', label: 'Tất cả' },
-              { id: 'DU_HANG', label: 'Đủ hàng' },
-              { id: 'CAN_DAT_HANG', label: 'Cần đặt hàng' },
-              { id: 'DUOI_SAFETY_STOCK', label: 'Dưới Safety Stock' },
               { id: 'HET_HANG', label: 'Hết hàng' },
+              { id: 'DAT_NGAY', label: 'Đặt ngay' },
+              { id: 'CHUAN_BI_DAT', label: 'Chuẩn bị đặt' },
+              { id: 'DU_HANG', label: 'Đủ hàng' },
             ] as const
           ).map((tab) => (
             <button
@@ -265,84 +265,87 @@ export function PartsPage({
         </div>
       </div>
 
-      {/* Parts Table */}
+      {/* Catalog Table */}
       <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
             <thead className="bg-zinc-50 text-zinc-500 border-b border-zinc-200">
               <tr>
                 <th className="px-4 py-3 font-semibold">Mã PT</th>
-                <th className="px-4 py-3 font-semibold">Tên phụ tùng & Nhà cung cấp</th>
-                <th className="px-4 py-3 font-semibold">Loại / ĐVT</th>
-                <th className="px-4 py-3 font-semibold text-right">Giá nhập</th>
-                <th className="px-4 py-3 font-semibold text-right">Giá xuất TK</th>
-                <th className="px-4 py-3 font-semibold text-right">Tồn đầu kỳ</th>
+                <th className="px-4 py-3 font-semibold">Tên phụ tùng & Ghi chú</th>
+                <th className="px-4 py-3 font-semibold">Nhóm / ĐVT</th>
+                <th className="px-4 py-3 font-semibold text-right">Giá nhập TK</th>
+                <th className="px-4 py-3 font-semibold text-right">Giá bán TK</th>
+                <th className="px-4 py-3 font-semibold">NCC</th>
+                <th className="px-4 py-3 font-semibold text-right">Định mức TT</th>
                 <th className="px-4 py-3 font-semibold text-right">Tồn hiện tại</th>
-                <th className="px-4 py-3 font-semibold text-right">Safety Stock</th>
-                <th className="px-4 py-3 font-semibold text-right">ROP</th>
+                <th className="px-4 py-3 font-semibold text-right">Đang đặt</th>
                 <th className="px-4 py-3 font-semibold text-right">Lead Time</th>
-                <th className="px-4 py-3 font-semibold text-right">EOQ</th>
                 <th className="px-4 py-3 font-semibold">Trạng thái</th>
                 <th className="px-4 py-3 font-semibold text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {filteredParts.map((part) => {
-                const k = part.kpi;
-                const statusMeta = getStatusMeta(k.trangThai);
+              {filteredItems.map((it) => {
+                const { catalog, indicator } = it;
+                const statusMeta = getSheetStatusMeta(it.trangThai);
                 return (
                   <tr
-                    key={part.id}
-                    onClick={() => onSelectPart(part)}
+                    key={catalog.maPhuTung}
+                    onClick={() => onSelectItem(it)}
                     className="hover:bg-zinc-50 cursor-pointer transition-colors"
                   >
                     <td className="px-4 py-3 font-mono font-bold text-zinc-900 whitespace-nowrap">
-                      {part.maPhuTung}
+                      {catalog.maPhuTung}
                     </td>
-                    <td className="px-4 py-3 min-w-[200px]">
-                      <div className="font-semibold text-zinc-900">{part.tenPhuTung}</div>
-                      <div className="text-[11px] text-zinc-500 truncate max-w-[240px]">
-                        {part.nhaCungCap?.tenNCC ?? part.nhaCungCapId}
-                      </div>
+                    <td className="px-4 py-3 min-w-[190px]">
+                      <div className="font-semibold text-zinc-900">{catalog.tenPhuTung}</div>
+                      {catalog.ghiChu && (
+                        <div className="text-[11px] text-zinc-500 truncate max-w-[220px]">
+                          {catalog.ghiChu}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-zinc-600">
-                      <div>{part.loaiPhuTung}</div>
-                      <div className="text-[11px] text-zinc-400">ĐVT: {part.donViTinh}</div>
+                      <div>{catalog.nhomPhuTung || '—'}</div>
+                      <div className="text-[11px] text-zinc-400">ĐVT: {catalog.donViTinh}</div>
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-700 whitespace-nowrap">
-                      {formatCurrency(part.giaNhap)}
+                      {formatCurrency(catalog.giaNhapThamChieu)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-700 whitespace-nowrap">
-                      {formatCurrency(part.giaXuatThamKhao)}
+                      {formatCurrency(catalog.giaBanThamChieu)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-500">
-                      {formatNumber(part.tonDauKy)}
+                    <td className="px-4 py-3 font-mono text-zinc-600 whitespace-nowrap">
+                      {catalog.maNhaCungCapMacDinh}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-600">
+                      {formatNumber(catalog.dinhMucToiThieu)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums font-bold text-zinc-900">
-                      {formatNumber(part.tonHienTai)}
+                      {formatNumber(indicator.tonHienTai)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-700">
-                      {formatNumber(k.safetyStock)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-orange-700">
-                      {formatNumber(k.rop, 1)}
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-orange-700">
+                      {formatNumber(catalog.slDangDatChuaNhan)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-600 whitespace-nowrap">
-                      {k.leadTime} ngày
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-700 whitespace-nowrap">
-                      {k.eoq !== null ? formatNumber(k.eoq) : 'Chưa đủ DL'}
+                      {it.leadTimeApDung}N
+                      {catalog.leadTimeRieng === null && (
+                        <span className="text-[10px] text-zinc-400 ml-1">(MĐ)</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-semibold ${statusMeta.bgClass} ${statusMeta.textClass} ${statusMeta.borderClass}`}
                       >
-                        {k.trangThai === 'DU_HANG' ? (
+                        {it.trangThai === 'HET_HANG' ? (
+                          <AlertOctagon className="w-3 h-3" />
+                        ) : it.trangThai === 'DU_HANG' ? (
                           <CheckCircle2 className="w-3 h-3" />
                         ) : (
                           <AlertTriangle className="w-3 h-3" />
                         )}
-                        {statusMeta.label}
+                        {it.trangThaiLabel}
                       </span>
                     </td>
                     <td
@@ -352,41 +355,29 @@ export function PartsPage({
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => onSelectPart(part)}
+                          onClick={() => onSelectItem(it)}
                           className="p-1.5 rounded text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-                          title="Xem chi tiết KPI"
+                          title="Xem chi tiết"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => openEditModal(part, e)}
+                          onClick={(e) => openEditModal(it, e)}
                           className="p-1.5 rounded text-zinc-500 hover:text-orange-700 hover:bg-orange-50"
-                          title="Chỉnh sửa"
+                          title="Chỉnh sửa (Lưu trên Database web)"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        {role === 'QUAN_LY' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onDeletePart(part.id);
-                            }}
-                            className="p-1.5 rounded text-zinc-500 hover:text-red-700 hover:bg-red-50"
-                            title="Xóa mã phụ tùng"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
                       </div>
                     </td>
                   </tr>
                 );
               })}
 
-              {filteredParts.length === 0 && (
+              {filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-10 text-center text-zinc-500">
+                  <td colSpan={12} className="px-4 py-10 text-center text-zinc-500">
                     Không tìm thấy phụ tùng phù hợp với bộ lọc hiện tại.
                   </td>
                 </tr>
@@ -399,17 +390,18 @@ export function PartsPage({
       {/* Add / Edit Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60">
-          <div className="bg-white border border-zinc-200 rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-xl">
+          <div className="bg-white border border-zinc-200 rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-xl">
             <div className="px-6 py-4 border-b border-zinc-200 flex items-center justify-between bg-zinc-50">
               <h2 className="text-base font-bold text-zinc-900">
-                {editingPart
-                  ? `Chỉnh sửa phụ tùng ${editingPart.maPhuTung}`
-                  : 'Thêm phụ tùng mới vào danh mục'}
+                {editingItem
+                  ? `Cập nhật phụ tùng ${editingItem.catalog.maPhuTung} (Lưu Database web)`
+                  : 'Thêm phụ tùng mới (Lưu Database web)'}
               </h2>
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
                 className="p-1.5 text-zinc-500 hover:text-zinc-900 rounded-lg"
+                aria-label="Đóng"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -422,6 +414,10 @@ export function PartsPage({
                 </div>
               )}
 
+              <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-600">
+                Thay đổi tại đây sẽ lưu vào collection <code className="font-mono text-zinc-800">catalog_parts_custom</code> trên Firebase Firestore và đồng bộ thời gian thực giữa mọi thiết bị (không ghi ngược lên Google Sheets).
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block font-semibold text-zinc-700 mb-1">
@@ -430,7 +426,7 @@ export function PartsPage({
                   <input
                     type="text"
                     required
-                    disabled={Boolean(editingPart)}
+                    disabled={Boolean(editingItem)}
                     value={form.maPhuTung}
                     onChange={(e) => setForm({ ...form, maPhuTung: e.target.value })}
                     className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono uppercase disabled:bg-zinc-100"
@@ -445,7 +441,6 @@ export function PartsPage({
                     required
                     value={form.tenPhuTung}
                     onChange={(e) => setForm({ ...form, tenPhuTung: e.target.value })}
-                    placeholder="VD: Má phanh đĩa trước Vision"
                     className="w-full h-9 px-3 rounded-lg border border-zinc-200"
                   />
                 </div>
@@ -453,21 +448,9 @@ export function PartsPage({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block font-semibold text-zinc-700 mb-1">Loại phụ tùng</label>
-                  <select
-                    value={form.loaiPhuTung}
-                    onChange={(e) => setForm({ ...form, loaiPhuTung: e.target.value })}
-                    className="w-full h-9 px-3 rounded-lg border border-zinc-200 bg-white"
-                  >
-                    {categories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-zinc-700 mb-1">Đơn vị tính</label>
+                  <label className="block font-semibold text-zinc-700 mb-1">
+                    Đơn vị tính *
+                  </label>
                   <input
                     type="text"
                     required
@@ -477,245 +460,132 @@ export function PartsPage({
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-zinc-700 mb-1">Nhà cung cấp</label>
-                  <select
-                    value={form.nhaCungCapId}
-                    onChange={(e) => setForm({ ...form, nhaCungCapId: e.target.value })}
-                    className="w-full h-9 px-3 rounded-lg border border-zinc-200 bg-white"
-                  >
-                    {state.suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.maNCC} - {s.tenNCC}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="block font-semibold text-zinc-700 mb-1">
+                    Nhóm phụ tùng
+                  </label>
+                  <input
+                    type="text"
+                    value={form.nhomPhuTung}
+                    onChange={(e) => setForm({ ...form, nhomPhuTung: e.target.value })}
+                    placeholder="VD: Hệ thống phanh"
+                    className="w-full h-9 px-3 rounded-lg border border-zinc-200"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">
+                    Mã NCC mặc định
+                  </label>
+                  <input
+                    type="text"
+                    value={form.maNhaCungCapMacDinh}
+                    onChange={(e) =>
+                      setForm({ ...form, maNhaCungCapMacDinh: e.target.value })
+                    }
+                    className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div>
-                  <label className="block font-semibold text-zinc-700 mb-1">Giá nhập (đ)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    required
-                    value={form.giaNhap}
-                    onChange={(e) => setForm({ ...form, giaNhap: Number(e.target.value) })}
-                    className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
-                  />
-                </div>
-                <div>
                   <label className="block font-semibold text-zinc-700 mb-1">
-                    Giá xuất tham khảo (đ)
+                    Giá nhập TK (đ)
                   </label>
                   <input
                     type="number"
                     min={0}
                     required
-                    value={form.giaXuatThamKhao}
+                    value={form.giaNhapThamChieu}
                     onChange={(e) =>
-                      setForm({ ...form, giaXuatThamKhao: Number(e.target.value) })
+                      setForm({ ...form, giaNhapThamChieu: Number(e.target.value) })
                     }
                     className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-zinc-700 mb-1">Tồn đầu kỳ</label>
-                  <input
-                    type="number"
-                    min={0}
-                    disabled={Boolean(editingPart)}
-                    value={form.tonDauKy}
-                    onChange={(e) => setForm({ ...form, tonDauKy: Number(e.target.value) })}
-                    className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono disabled:bg-zinc-100"
-                  />
-                </div>
-                <div>
                   <label className="block font-semibold text-zinc-700 mb-1">
-                    Số lượng giữ chỗ
+                    Giá bán TK (đ)
                   </label>
                   <input
                     type="number"
                     min={0}
-                    value={form.soLuongGiuCho}
+                    required
+                    value={form.giaBanThamChieu}
                     onChange={(e) =>
-                      setForm({ ...form, soLuongGiuCho: Number(e.target.value) })
+                      setForm({ ...form, giaBanThamChieu: Number(e.target.value) })
                     }
+                    className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">
+                    Định mức tối thiểu
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    required
+                    value={form.dinhMucToiThieu}
+                    onChange={(e) =>
+                      setForm({ ...form, dinhMucToiThieu: Number(e.target.value) })
+                    }
+                    className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">
+                    Lead Time riêng (ngày)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder={`Mặc định ${state.thamSo.leadTimeMacDinh}N`}
+                    value={form.leadTimeRieng}
+                    onChange={(e) => setForm({ ...form, leadTimeRieng: e.target.value })}
                     className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
                   />
                 </div>
               </div>
 
-              {/* KPI Parameters */}
-              <div className="pt-3 border-t border-zinc-200">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-bold text-zinc-900">
-                    Thông số quản trị tồn kho & Chi phí EOQ
-                  </span>
-                  {editingPart && role !== 'QUAN_LY' && (
-                    <span className="text-[11px] text-amber-700 font-medium">
-                      Chuyển sang vai trò Quản lý để sửa Safety Stock / Lead Time
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {editingItem ? (
                   <div>
                     <label className="block font-semibold text-zinc-700 mb-1">
-                      Phương pháp Safety Stock
-                    </label>
-                    <div className="flex gap-2">
-                      <select
-                        disabled={Boolean(editingPart && role !== 'QUAN_LY')}
-                        value={form.phuongPhapSS}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            phuongPhapSS: e.target.value as 'manual' | 'auto',
-                          })
-                        }
-                        className="flex-1 h-9 px-3 rounded-lg border border-zinc-200 bg-white disabled:bg-zinc-100"
-                      >
-                        <option value="manual">Nhập thủ công</option>
-                        <option value="auto">Tự động (Max×MaxLT - Avg×AvgLT)</option>
-                      </select>
-                      {form.phuongPhapSS === 'manual' && (
-                        <input
-                          type="number"
-                          min={0}
-                          disabled={Boolean(editingPart && role !== 'QUAN_LY')}
-                          value={form.safetyStockThuCong}
-                          onChange={(e) =>
-                            setForm({ ...form, safetyStockThuCong: Number(e.target.value) })
-                          }
-                          className="w-24 h-9 px-3 rounded-lg border border-zinc-200 font-mono disabled:bg-zinc-100"
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-zinc-700 mb-1">
-                      Lead Time giao hàng (ngày)
-                    </label>
-                    <div className="flex gap-2">
-                      <select
-                        disabled={Boolean(editingPart && role !== 'QUAN_LY')}
-                        value={form.phuongPhapLT}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            phuongPhapLT: e.target.value as 'manual' | 'history',
-                          })
-                        }
-                        className="flex-1 h-9 px-3 rounded-lg border border-zinc-200 bg-white disabled:bg-zinc-100"
-                      >
-                        <option value="manual">Nhập thủ công</option>
-                        <option value="history">Trung bình lịch sử đơn hàng</option>
-                      </select>
-                      {form.phuongPhapLT === 'manual' && (
-                        <input
-                          type="number"
-                          min={0}
-                          disabled={Boolean(editingPart && role !== 'QUAN_LY')}
-                          value={form.leadTimeThuCong}
-                          onChange={(e) =>
-                            setForm({ ...form, leadTimeThuCong: Number(e.target.value) })
-                          }
-                          className="w-24 h-9 px-3 rounded-lg border border-zinc-200 font-mono disabled:bg-zinc-100"
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-zinc-700 mb-1">
-                      Chi phí mỗi lần đặt hàng S (đ/lần)
+                      SL đang đặt chưa nhận
                     </label>
                     <input
                       type="number"
                       min={0}
-                      placeholder="Để trống nếu chưa có"
-                      value={form.chiPhiDatHang}
-                      onChange={(e) => setForm({ ...form, chiPhiDatHang: e.target.value })}
+                      value={form.slDangDatChuaNhan}
+                      onChange={(e) =>
+                        setForm({ ...form, slDangDatChuaNhan: Number(e.target.value) })
+                      }
                       className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
                     />
                   </div>
-
+                ) : (
                   <div>
                     <label className="block font-semibold text-zinc-700 mb-1">
-                      Chi phí lưu kho/đơn vị/năm H (đ)
+                      Tồn đầu kỳ (nếu có)
                     </label>
                     <input
                       type="number"
                       min={0}
-                      placeholder="Để trống nếu chưa có"
-                      value={form.chiPhiLuuKhoNam}
-                      onChange={(e) => setForm({ ...form, chiPhiLuuKhoNam: e.target.value })}
+                      value={form.tonDauKy}
+                      onChange={(e) => setForm({ ...form, tonDauKy: Number(e.target.value) })}
                       className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
                     />
                   </div>
-                </div>
+                )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-4">
-                  <div>
-                    <label className="block font-semibold text-zinc-700 mb-1">
-                      Phương pháp ROQ
-                    </label>
-                    <select
-                      value={form.phuongPhapROQ}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          phuongPhapROQ: e.target.value as 'eoq' | 'target',
-                        })
-                      }
-                      className="w-full h-9 px-3 rounded-lg border border-zinc-200 bg-white"
-                    >
-                      <option value="eoq">Theo EOQ</option>
-                      <option value="target">Mức tồn mục tiêu</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-zinc-700 mb-1">
-                      Mức tồn mục tiêu
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.mucTonMucTieu}
-                      onChange={(e) => setForm({ ...form, mucTonMucTieu: e.target.value })}
-                      className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-zinc-700 mb-1">
-                      Quy cách đóng gói
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={form.quyCachDongGoi}
-                      onChange={(e) =>
-                        setForm({ ...form, quyCachDongGoi: Number(e.target.value) })
-                      }
-                      className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-zinc-700 mb-1">
-                      Đặt tối thiểu (MOQ)
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={form.soLuongDatToiThieu}
-                      onChange={(e) =>
-                        setForm({ ...form, soLuongDatToiThieu: Number(e.target.value) })
-                      }
-                      className="w-full h-9 px-3 rounded-lg border border-zinc-200 font-mono"
-                    />
-                  </div>
+                <div>
+                  <label className="block font-semibold text-zinc-700 mb-1">Ghi chú</label>
+                  <input
+                    type="text"
+                    value={form.ghiChu}
+                    onChange={(e) => setForm({ ...form, ghiChu: e.target.value })}
+                    className="w-full h-9 px-3 rounded-lg border border-zinc-200"
+                  />
                 </div>
               </div>
 
@@ -732,7 +602,11 @@ export function PartsPage({
                   disabled={submitting}
                   className="h-9 px-4 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-semibold"
                 >
-                  {submitting ? 'Đang lưu...' : editingPart ? 'Lưu thay đổi' : 'Thêm phụ tùng'}
+                  {submitting
+                    ? 'Đang lưu vào Firebase...'
+                    : editingItem
+                    ? 'Lưu vào Firebase'
+                    : 'Thêm vào Firebase'}
                 </button>
               </div>
             </form>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -6,9 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  ComposedChart,
   Legend,
-  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -19,568 +17,590 @@ import {
 import {
   AlertOctagon,
   AlertTriangle,
-  ArrowRight,
+  ArrowUpDown,
   CheckCircle2,
-  Play,
-  RotateCcw,
 } from 'lucide-react';
 import type {
-  AppStateResponse,
-  DashboardPeriodFilter,
-  HydratedPart,
-  KpiWindowDays,
+  MergedInventoryItem,
+  SheetDecisionStatus,
+  SheetsStateResponse,
 } from '../types/inventory';
-import { formatCurrency, formatNumber, getStatusMeta } from '../lib/format';
+import { formatCurrency, formatNumber, getSheetStatusMeta } from '../lib/format';
 
 interface DashboardPageProps {
-  state: AppStateResponse;
-  period: DashboardPeriodFilter;
-  onPeriodChange: (p: DashboardPeriodFilter) => void;
-  kpiDays: KpiWindowDays;
-  onKpiDaysChange: (d: KpiWindowDays) => void;
-  onSelectPart: (part: HydratedPart) => void;
-  onGoToProposals: () => void;
-  onQuickDemoIssuePT001: () => Promise<void>;
-  onResetDemo: () => Promise<void>;
-  busyAction: boolean;
+  state: SheetsStateResponse;
+  searchQuery: string;
+  onSelectItem: (item: MergedInventoryItem) => void;
 }
 
 export function DashboardPage({
   state,
-  period,
-  onPeriodChange,
-  kpiDays,
-  onKpiDaysChange,
-  onSelectPart,
-  onGoToProposals,
-  onQuickDemoIssuePT001,
-  onResetDemo,
-  busyAction,
+  searchQuery,
+  onSelectItem,
 }: DashboardPageProps) {
-  const d = state.dashboard;
-  const pt001 = state.parts.find((p) => p.maPhuTung === 'PT001');
-  const urgentParts = state.parts
-    .filter((p) => p.kpi.hetHang || p.kpi.duoiSafetyStock || p.kpi.canDatHang)
-    .sort((a, b) => {
-      const rank = { HET_HANG: 0, DUOI_SAFETY_STOCK: 1, CAN_DAT_HANG: 2, DU_HANG: 3 };
-      return rank[a.kpi.trangThai] - rank[b.kpi.trangThai];
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'URGENT' | SheetDecisionStatus>(
+    'ALL'
+  );
+  const [sortMode, setSortMode] = useState<'priority' | 'code'>('priority');
+
+  const { kpis, charts, thamSo, items } = state;
+
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const list = items.filter((it) => {
+      if (statusFilter === 'URGENT') {
+        if (it.trangThai !== 'HET_HANG' && it.trangThai !== 'DAT_NGAY') return false;
+      } else if (statusFilter !== 'ALL' && it.trangThai !== statusFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        it.catalog.maPhuTung.toLowerCase().includes(q) ||
+        it.catalog.tenPhuTung.toLowerCase().includes(q) ||
+        it.catalog.maNhaCungCapMacDinh.toLowerCase().includes(q)
+      );
     });
 
-  const periodOptions: Array<{ id: DashboardPeriodFilter; label: string }> = [
-    { id: 'day', label: 'Ngày' },
-    { id: 'month', label: 'Tháng' },
-    { id: 'quarter', label: 'Quý' },
-    { id: 'year', label: 'Năm' },
-  ];
-
-  const kpiDayOptions: KpiWindowDays[] = [30, 60, 90];
+    return [...list].sort((a, b) => {
+      if (sortMode === 'priority') {
+        if (a.uuTien !== b.uuTien) return a.uuTien - b.uuTien;
+        return a.indicator.tonHienTai - b.indicator.tonHienTai;
+      }
+      return a.catalog.rowIndex - b.catalog.rowIndex;
+    });
+  }, [items, searchQuery, statusFilter, sortMode]);
 
   return (
     <div className="space-y-6">
-      {/* Page Title & Filters Toolbar */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      {/* Header & Live THAM SO Banner */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight">
-            Tổng quan tồn kho phụ tùng
+            Dashboard Quản lý Tồn kho Phụ tùng Tiến Thu
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
-            Trung tâm Dịch vụ & Bảo hành Tiến Thu · Kỳ báo cáo: {d.periodLabel} · Chu kỳ tính ADD:{' '}
-            {kpiDays} ngày
+            Danh mục & Tham số từ Google Sheets · Giao dịch & đồng bộ thời gian thực trên Firebase Firestore
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Period Segmented Filter */}
-          <div className="inline-flex items-center p-1 bg-white border border-zinc-200 rounded-lg">
-            {periodOptions.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => onPeriodChange(opt.id)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                  period === opt.id
-                    ? 'bg-zinc-900 text-white'
-                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          {/* KPI Window Filter */}
-          <div className="inline-flex items-center p-1 bg-white border border-zinc-200 rounded-lg">
-            {kpiDayOptions.map((days) => (
-              <button
-                key={days}
-                type="button"
-                onClick={() => onKpiDaysChange(days)}
-                className={`px-2.5 py-1.5 text-xs font-mono font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                  kpiDays === days
-                    ? 'bg-orange-600 text-white'
-                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-                }`}
-              >
-                {days}N
-              </button>
-            ))}
-          </div>
+        <div className="bg-white border border-zinc-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-600">
+          <span>
+            Kỳ thống kê:{' '}
+            <strong className="font-mono text-zinc-900">
+              {thamSo.tuNgay} – {thamSo.denNgay} ({thamSo.soNgayCuaKy} ngày)
+            </strong>
+          </span>
+          <span className="text-zinc-300">|</span>
+          <span>
+            Ngày báo cáo:{' '}
+            <strong className="font-mono text-zinc-900">{thamSo.ngayXemBaoCao}</strong>
+          </span>
+          <span className="text-zinc-300">|</span>
+          <span>
+            LT mặc định:{' '}
+            <strong className="font-mono text-zinc-900">{thamSo.leadTimeMacDinh} ngày</strong>
+          </span>
         </div>
       </div>
 
-      {/* Live Demo Scenario Card for PT001 */}
-      {pt001 && (
-        <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-              <span className="font-semibold text-orange-700">Kịch bản kiểm thử BPMN To-Be</span>
-              <span aria-hidden="true">·</span>
-              <span className="font-mono font-semibold text-zinc-900">PT001 - Má phanh xe máy</span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Trạng thái hiện tại:{' '}
-                <strong className={getStatusMeta(pt001.kpi.trangThai).textClass}>
-                  {getStatusMeta(pt001.kpi.trangThai).label}
-                </strong>
-              </span>
-            </div>
-            <div className="text-xs sm:text-sm text-zinc-700 font-mono tabular-nums">
-              Tồn: <strong>{pt001.tonHienTai}</strong> {pt001.donViTinh} · IP:{' '}
-              <strong>{pt001.kpi.inventoryPosition}</strong> · ADD:{' '}
-              <strong>{pt001.kpi.add}/ngày</strong> · LT: <strong>{pt001.kpi.leadTime} ngày</strong>{' '}
-              · SS: <strong>{pt001.kpi.safetyStock}</strong> · ROP:{' '}
-              <strong className="text-orange-700">{pt001.kpi.rop}</strong>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              disabled={busyAction || pt001.kpi.tonKhaDung < 6}
-              onClick={onQuickDemoIssuePT001}
-              className="h-9 px-3.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-zinc-950 text-xs font-bold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
-            >
-              <Play className="w-3.5 h-3.5" />
-              Xuất thử 6 bộ PT001
-            </button>
-            <button
-              type="button"
-              disabled={busyAction}
-              onClick={onResetDemo}
-              className="h-9 px-3 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 disabled:opacity-50 text-zinc-700 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Khôi phục dữ liệu mẫu
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 10 Dashboard KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* 8 Overview KPI Cards (Section 2.A) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* 1 */}
         <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">1. Tổng số mã phụ tùng</div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5">
-            {formatNumber(d.tongMaPhuTung)}
+          <div className="text-xs font-medium text-zinc-500">
+            1. Tổng số loại phụ tùng đang quản lý
           </div>
-          <div className="text-xs text-zinc-500 mt-1">Đang quản lý trong danh mục</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5">
+            {formatNumber(kpis.tongLoaiPhuTung)}
+          </div>
+          <div className="text-xs text-zinc-500 mt-1">
+            Đọc từ sheet Danh mục phụ tùng
+          </div>
         </div>
 
         {/* 2 */}
         <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">2. Tổng số lượng tồn kho</div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5">
-            {formatNumber(d.tongSoLuongTon)}
+          <div className="text-xs font-medium text-zinc-500">
+            2. Tổng số lượng phụ tùng tồn kho
           </div>
-          <div className="text-xs text-zinc-500 mt-1">Tổng đơn vị tồn thực tế</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5">
+            {formatNumber(kpis.tongSoLuongTonKho)}
+          </div>
+          <div className="text-xs text-zinc-500 mt-1">
+            Tổng tồn thực tế tính từ Firebase & tồn đầu kỳ
+          </div>
         </div>
 
         {/* 3 */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">3. Tổng giá trị tồn kho</div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5">
-            {formatCurrency(d.tongGiaTriTonKho)}
+        <div className="bg-white border border-red-200 rounded-xl p-4">
+          <div className="text-xs font-medium text-red-700">
+            3. Cần đặt hàng ngay
           </div>
-          <div className="text-xs text-zinc-500 mt-1">Tính theo giá vốn nhập kho</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-red-600 mt-1.5">
+            {formatNumber(kpis.soLoaiCanDatNgay)} loại
+          </div>
+          <div className="text-xs text-red-600/80 mt-1">
+            Quyết định ĐẶT NGAY hoặc HẾT HÀNG
+          </div>
         </div>
 
         {/* 4 */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">4. Phụ tùng cần đặt hàng lại</div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-amber-700 mt-1.5">
-            {formatNumber(d.soPhuTungCanDatHang)}
+        <div className="bg-white border border-amber-200 rounded-xl p-4">
+          <div className="text-xs font-medium text-amber-800">
+            4. Sắp đến điểm đặt hàng
           </div>
-          <div className="text-xs text-zinc-500 mt-1">Inventory Position ≤ ROP</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-amber-700 mt-1.5">
+            {formatNumber(kpis.soLoaiSapDenDiemDat)} loại
+          </div>
+          <div className="text-xs text-amber-700/80 mt-1">
+            Trạng thái CHUẨN BỊ ĐẶT (cảnh báo {thamSo.soNgayCanhBaoTruoc}N)
+          </div>
         </div>
 
         {/* 5 */}
         <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">5. Phụ tùng hết hàng</div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-red-600 mt-1.5">
-            {formatNumber(d.soPhuTungHetHang)}
+          <div className="text-xs font-medium text-zinc-500">
+            5. Số loại phụ tùng hết hàng
           </div>
-          <div className="text-xs text-zinc-500 mt-1">Tồn khả dụng = 0</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-red-700 mt-1.5">
+            {formatNumber(kpis.soLoaiHetHang)} loại
+          </div>
+          <div className="text-xs text-zinc-500 mt-1">Tồn hiện tại ≤ 0</div>
         </div>
 
         {/* 6 */}
         <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">6. Dưới mức Safety Stock</div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-orange-600 mt-1.5">
-            {formatNumber(d.soPhuTungDuoiSafetyStock)}
+          <div className="text-xs font-medium text-zinc-500">
+            6. Tổng giá trị tồn kho (giá nhập TK)
           </div>
-          <div className="text-xs text-zinc-500 mt-1">Tồn khả dụng &lt; ngưỡng an toàn</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5">
+            {formatCurrency(kpis.tongGiaTriTonKho)}
+          </div>
+          <div className="text-xs text-zinc-500 mt-1">
+            Σ (Tồn hiện tại × Giá nhập tham chiếu)
+          </div>
         </div>
 
         {/* 7 */}
         <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">7. Nhập / Xuất trong kỳ</div>
-          <div className="text-xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5 flex items-baseline gap-2">
-            <span className="text-emerald-700">+{formatNumber(d.tongNhapTrongKy)}</span>
-            <span className="text-zinc-300">/</span>
-            <span className="text-orange-700">-{formatNumber(d.tongXuatTrongKy)}</span>
+          <div className="text-xs font-medium text-zinc-500">
+            7. Đang đặt nhưng chưa nhận
           </div>
-          <div className="text-xs text-zinc-500 mt-1">Trong {d.periodLabel}</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-orange-700 mt-1.5">
+            {formatNumber(kpis.tongSoLuongDangDat)}
+          </div>
+          <div className="text-xs text-zinc-500 mt-1">
+            Không cộng vào tồn thực tế
+          </div>
         </div>
 
         {/* 8 */}
         <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">8. Inventory Turnover</div>
+          <div className="text-xs font-medium text-zinc-500">
+            8. Số ngày tồn kho trung bình
+          </div>
           <div className="text-2xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5">
-            {d.inventoryTurnover !== null ? `${d.inventoryTurnover} vòng` : '—'}
-          </div>
-          <div className="text-xs text-zinc-500 mt-1 truncate" title={d.inventoryTurnoverFormula}>
-            Vòng quay tồn kho ({d.periodLabel})
-          </div>
-        </div>
-
-        {/* 9 */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">9. Days of Inventory (DOH)</div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-zinc-900 mt-1.5">
-            {d.doh !== null ? `${d.doh} ngày` : '—'}
-          </div>
-          <div className="text-xs text-zinc-500 mt-1 truncate" title={d.dohFormula}>
-            Số ngày tồn kho bình quân
-          </div>
-        </div>
-
-        {/* 10 */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-4">
-          <div className="text-xs font-medium text-zinc-500">10. Giá trị đề xuất đặt hàng</div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-orange-700 mt-1.5">
-            {formatCurrency(d.tongGiaTriDeXuatDatHang)}
+            {kpis.soNgayTonKhoTrungBinh !== null
+              ? `${kpis.soNgayTonKhoTrungBinh} ngày`
+              : 'Chưa đủ dữ liệu'}
           </div>
           <div className="text-xs text-zinc-500 mt-1">
-            Stockout Rate:{' '}
-            <strong className="font-mono text-zinc-800">
-              {d.stockoutRate !== null ? `${d.stockoutRate}%` : 'Chưa có dữ liệu'}
-            </strong>
+            Trung bình các mã có phát sinh tiêu thụ
           </div>
         </div>
       </div>
 
-      {/* Charts Grid Row 1 */}
+      {/* Charts Row 1: Top Consumption + Current Stock vs ROP + Status Ratio */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Biểu đồ Nhập - Xuất - Tồn theo thời gian */}
-        <div className="lg:col-span-2 bg-white border border-zinc-200 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-sm font-bold text-zinc-900">
-                Biểu đồ Nhập – Xuất – Tồn theo thời gian
-              </h2>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                Theo dõi biến động lượng nhập, lượng xuất và tổng tồn kho cuối kỳ ({d.periodLabel})
-              </p>
-            </div>
-          </div>
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={d.nhapXuatTonSeries}
-                margin={{ top: 8, right: 12, left: -12, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#E4E4E7" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#71717A' }} />
-                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#71717A' }} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#71717A' }} />
-                <Tooltip
-                  contentStyle={{
-                    fontSize: 12,
-                    borderRadius: 8,
-                    borderColor: '#E4E4E7',
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar yAxisId="left" dataKey="nhap" name="Nhập kho" fill="#16A34A" radius={[4, 4, 0, 0]} />
-                <Bar yAxisId="left" dataKey="xuat" name="Xuất kho" fill="#EA580C" radius={[4, 4, 0, 0]} />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="tonCuoiKy"
-                  name="Tồn cuối kỳ"
-                  stroke="#18181B"
-                  strokeWidth={2.5}
-                  dot={{ r: 3 }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Biểu đồ phân loại trạng thái tồn kho */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-5 flex flex-col">
-          <h2 className="text-sm font-bold text-zinc-900">Phân loại trạng thái tồn kho</h2>
-          <p className="text-xs text-zinc-500 mt-0.5 mb-3">
-            Cơ cấu {d.tongMaPhuTung} mã phụ tùng theo ngưỡng ROP & Safety Stock
-          </p>
-          <div className="h-52 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={d.phanBoTrangThai.filter((s) => s.count > 0)}
-                  dataKey="count"
-                  nameKey="label"
-                  innerRadius={52}
-                  outerRadius={80}
-                  paddingAngle={2}
-                >
-                  {d.phanBoTrangThai
-                    .filter((s) => s.count > 0)
-                    .map((entry) => (
-                      <Cell key={entry.status} fill={entry.color} />
-                    ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    fontSize: 12,
-                    borderRadius: 8,
-                    borderColor: '#E4E4E7',
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-auto space-y-2 pt-3 border-t border-zinc-100">
-            {d.phanBoTrangThai.map((item) => (
-              <div key={item.status} className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-2 text-zinc-700 font-medium">
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm shrink-0"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  {item.label}
-                </span>
-                <span className="font-mono tabular-nums font-bold text-zinc-900">
-                  {item.count} mã
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Charts Grid Row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 5 phụ tùng sử dụng nhiều nhất */}
+        {/* Chart 1: Top phụ tùng tiêu thụ nhiều nhất */}
         <div className="bg-white border border-zinc-200 rounded-xl p-5">
           <h2 className="text-sm font-bold text-zinc-900">
-            Top 5 phụ tùng sử dụng nhiều nhất ({d.periodLabel})
+            Top phụ tùng tiêu thụ nhiều nhất
           </h2>
           <p className="text-xs text-zinc-500 mt-0.5 mb-4">
-            Tổng hợp từ các phiếu xuất kho bảo hành & sửa chữa (không gồm điều chỉnh kiểm kê)
+            Số lượng xuất trong kỳ từ lịch sử giao dịch
           </p>
-          {d.top5SuDung.length > 0 ? (
+          {charts.topTieuThu.length > 0 ? (
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={d.top5SuDung}
+                  data={charts.topTieuThu}
                   layout="vertical"
-                  margin={{ top: 4, right: 24, left: 10, bottom: 4 }}
+                  margin={{ top: 4, right: 20, left: 6, bottom: 4 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#E4E4E7" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11, fill: '#71717A' }} />
                   <YAxis
                     type="category"
                     dataKey="maPhuTung"
-                    width={64}
+                    width={58}
                     tick={{ fontSize: 11, fill: '#18181B', fontWeight: 600 }}
                   />
                   <Tooltip
                     formatter={(value, _name, props) => [
-                      `${value ?? 0} đơn vị (${(props?.payload as { tenPhuTung?: string } | undefined)?.tenPhuTung ?? ''})`,
-                      'Đã xuất',
+                      `${value ?? 0} (${(props?.payload as { tenPhuTung?: string } | undefined)?.tenPhuTung ?? ''})`,
+                      'Xuất trong kỳ',
                     ]}
-                    contentStyle={{
-                      fontSize: 12,
-                      borderRadius: 8,
-                      borderColor: '#E4E4E7',
-                    }}
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
                   />
                   <Bar
-                    dataKey="soLuongSuDung"
-                    name="Số lượng xuất"
-                    fill="#F59E0B"
+                    dataKey="xuatTrongKy"
+                    name="Xuất trong kỳ"
+                    fill="#EA580C"
                     radius={[0, 4, 4, 0]}
-                    barSize={22}
+                    barSize={18}
                   />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
             <div className="h-64 flex items-center justify-center text-xs text-zinc-500">
-              Chưa có giao dịch xuất kho trong kỳ {d.periodLabel}.
+              Chưa có dữ liệu tiêu thụ trong kỳ trên Google Sheets.
             </div>
           )}
         </div>
 
-        {/* Xu hướng tiêu thụ phụ tùng */}
+        {/* Chart 2: Tồn hiện tại so với ROP */}
         <div className="bg-white border border-zinc-200 rounded-xl p-5">
-          <h2 className="text-sm font-bold text-zinc-900">Xu hướng tiêu thụ phụ tùng</h2>
+          <h2 className="text-sm font-bold text-zinc-900">Tồn hiện tại so với ROP</h2>
           <p className="text-xs text-zinc-500 mt-0.5 mb-4">
-            So sánh nhu cầu xuất kho theo mốc thời gian với mức tiêu thụ bình quân kỳ
+            So sánh Tồn hiện tại và Điểm đặt hàng (ROP) từng mã
           </p>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={d.xuHuongTieuThu}
-                margin={{ top: 8, right: 12, left: -12, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#E4E4E7" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#71717A' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#71717A' }} />
-                <Tooltip
-                  contentStyle={{
-                    fontSize: 12,
-                    borderRadius: 8,
-                    borderColor: '#E4E4E7',
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area
-                  type="monotone"
-                  dataKey="tieuThu"
-                  name="Tiêu thụ thực tế"
-                  stroke="#EA580C"
-                  fill="#FFEDD5"
-                  strokeWidth={2}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="trungBinh"
-                  name="Bình quân kỳ"
-                  stroke="#52525B"
-                  strokeDasharray="4 4"
-                  dot={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          {charts.tonSoVoiRop.length > 0 ? (
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={charts.tonSoVoiRop}
+                  margin={{ top: 4, right: 8, left: -16, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E4E4E7" />
+                  <XAxis dataKey="maPhuTung" tick={{ fontSize: 10, fill: '#52525B' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#71717A' }} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar
+                    dataKey="tonHienTai"
+                    name="Tồn hiện tại"
+                    fill="#18181B"
+                    radius={[3, 3, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="rop"
+                    name="Điểm đặt hàng (ROP)"
+                    fill="#F59E0B"
+                    radius={[3, 3, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-xs text-zinc-500">
+              Chưa có dữ liệu tồn kho.
+            </div>
+          )}
+        </div>
+
+        {/* Chart 3: Tỷ lệ phụ tùng theo trạng thái */}
+        <div className="bg-white border border-zinc-200 rounded-xl p-5 flex flex-col">
+          <h2 className="text-sm font-bold text-zinc-900">Tỷ lệ phụ tùng theo trạng thái</h2>
+          <p className="text-xs text-zinc-500 mt-0.5 mb-2">
+            Phân bổ {kpis.tongLoaiPhuTung} mã theo ngưỡng ROP & Safety Stock
+          </p>
+          {items.length > 0 ? (
+            <>
+              <div className="h-44 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={charts.phanBoTrangThai.filter((s) => s.count > 0)}
+                      dataKey="count"
+                      nameKey="label"
+                      innerRadius={44}
+                      outerRadius={70}
+                      paddingAngle={2}
+                    >
+                      {charts.phanBoTrangThai
+                        .filter((s) => s.count > 0)
+                        .map((entry) => (
+                          <Cell key={entry.status} fill={entry.color} />
+                        ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-auto space-y-1.5 pt-2 border-t border-zinc-100">
+                {charts.phanBoTrangThai.map((s) => (
+                  <div key={s.status} className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-2 text-zinc-700 font-medium">
+                      <span
+                        className="w-2.5 h-2.5 rounded-sm shrink-0"
+                        style={{ backgroundColor: s.color }}
+                      />
+                      {s.label}
+                    </span>
+                    <span className="font-mono tabular-nums font-bold text-zinc-900">
+                      {s.count} mã
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-xs text-zinc-500">
+              Chưa có dữ liệu.
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Urgent Reorder Table */}
-      <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-zinc-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h2 className="text-base font-bold text-zinc-900">
-              Bảng phụ tùng cần đặt hàng gấp ({urgentParts.length})
-            </h2>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              Các mã có Inventory Position ≤ ROP, dưới Safety Stock hoặc đã hết hàng
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onGoToProposals}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 hover:text-orange-700 whitespace-nowrap"
-          >
-            <span>Xử lý tại trang Đề xuất đặt hàng</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+      {/* Charts Row 2: Stock Value per Part + Inbound/Outbound Trend */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Chart 4: Giá trị tồn kho theo từng phụ tùng */}
+        <div className="bg-white border border-zinc-200 rounded-xl p-5">
+          <h2 className="text-sm font-bold text-zinc-900">
+            Giá trị tồn kho theo từng phụ tùng
+          </h2>
+          <p className="text-xs text-zinc-500 mt-0.5 mb-4">
+            Tính theo Tồn hiện tại × Giá nhập tham chiếu (VNĐ)
+          </p>
+          {charts.giaTriTonTheoPhuTung.length > 0 ? (
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={charts.giaTriTonTheoPhuTung}
+                  margin={{ top: 4, right: 12, left: 10, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E4E4E7" />
+                  <XAxis dataKey="maPhuTung" tick={{ fontSize: 10, fill: '#52525B' }} />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: '#71717A' }}
+                    tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`}
+                  />
+                  <Tooltip
+                    formatter={(v) => [formatCurrency(Number(v)), 'Giá trị tồn']}
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  />
+                  <Bar
+                    dataKey="giaTriTon"
+                    name="Giá trị tồn kho"
+                    fill="#F59E0B"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-xs text-zinc-500">
+              Chưa có dữ liệu giá trị tồn kho.
+            </div>
+          )}
         </div>
 
-        {urgentParts.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-zinc-50 text-zinc-500 border-b border-zinc-200">
+        {/* Chart 5: Xu hướng nhập và xuất theo thời gian */}
+        <div className="bg-white border border-zinc-200 rounded-xl p-5">
+          <h2 className="text-sm font-bold text-zinc-900">
+            Xu hướng nhập và xuất theo thời gian
+          </h2>
+          <p className="text-xs text-zinc-500 mt-0.5 mb-4">
+            Tổng hợp giao dịch NHAP_NCC và XUAT_SUA_CHUA từ Firebase Firestore
+          </p>
+          {charts.xuHuongNhapXuat.length > 0 ? (
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={charts.xuHuongNhapXuat}
+                  margin={{ top: 4, right: 12, left: -14, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E4E4E7" />
+                  <XAxis dataKey="ngay" tick={{ fontSize: 10, fill: '#71717A' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#71717A' }} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Area
+                    type="monotone"
+                    dataKey="nhap"
+                    name="Nhập NCC"
+                    stroke="#16A34A"
+                    fill="#DCFCE7"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="xuat"
+                    name="Xuất sửa chữa"
+                    stroke="#EA580C"
+                    fill="#FFEDD5"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-xs text-zinc-500">
+              Chưa có lịch sử giao dịch trên PHU TUNG KHO.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 16-Column Inventory Tracking Table (Section 2.B) */}
+      <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-zinc-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-zinc-900">
+              Bảng theo dõi tồn kho & Cảnh báo đặt hàng ({filteredItems.length})
+            </h2>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Nhấn vào từng dòng để xem hồ sơ chi tiết và lịch sử giao dịch trên Firebase Firestore
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center p-1 bg-zinc-100 rounded-lg overflow-x-auto">
+              {(
+                [
+                  { id: 'ALL', label: 'Tất cả' },
+                  { id: 'URGENT', label: 'Đặt ngay / Hết hàng' },
+                  { id: 'CHUAN_BI_DAT', label: 'Chuẩn bị đặt' },
+                  { id: 'DU_HANG', label: 'Đủ hàng' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setStatusFilter(tab.id)}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                    statusFilter === tab.id
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setSortMode((m) => (m === 'priority' ? 'code' : 'priority'))
+              }
+              className="h-8 px-3 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-semibold text-zinc-700 inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              {sortMode === 'priority' ? 'Ưu tiên đặt hàng' : 'Theo thứ tự mã'}
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-zinc-50 text-zinc-500 border-b border-zinc-200">
+              <tr>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Mã PT</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Tên phụ tùng</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">ĐVT</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Tồn hiện tại</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Định mức TT</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">TB/ngày</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Safety Stock</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">ROP</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Lead Time</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Còn đủ dùng</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Ngày cần đặt</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Đề xuất đặt</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Giá nhập TK</th>
+                <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Giá bán TK</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">NCC</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {filteredItems.map((it) => {
+                const { catalog, indicator } = it;
+                const meta = getSheetStatusMeta(it.trangThai);
+                return (
+                  <tr
+                    key={catalog.maPhuTung}
+                    onClick={() => onSelectItem(it)}
+                    className="hover:bg-amber-50/40 cursor-pointer transition-colors"
+                  >
+                    <td className="px-3 py-3 font-mono font-bold text-zinc-900 whitespace-nowrap">
+                      {catalog.maPhuTung}
+                    </td>
+                    <td className="px-3 py-3 font-semibold text-zinc-900 min-w-[150px]">
+                      {catalog.tenPhuTung}
+                    </td>
+                    <td className="px-3 py-3 text-zinc-600 whitespace-nowrap">
+                      {catalog.donViTinh}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums font-bold text-zinc-900">
+                      {formatNumber(indicator.tonHienTai)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-600">
+                      {formatNumber(catalog.dinhMucToiThieu)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {formatNumber(indicator.tieuThuTBNgay, 2)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700">
+                      {formatNumber(indicator.tonAnToan)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums font-semibold text-orange-700">
+                      {formatNumber(indicator.diemDatHang)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-600 whitespace-nowrap">
+                      {it.leadTimeApDung}N
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700 whitespace-nowrap">
+                      {indicator.soNgayConDuDung !== null
+                        ? `${formatNumber(indicator.soNgayConDuDung, 1)}N`
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-3 font-mono tabular-nums text-zinc-700 whitespace-nowrap">
+                      {indicator.ngayDatMuonNhat || '—'}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums font-bold text-red-700">
+                      {indicator.slDeXuatDat > 0 ? formatNumber(indicator.slDeXuatDat) : '0'}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700 whitespace-nowrap">
+                      {formatCurrency(catalog.giaNhapThamChieu)}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-zinc-700 whitespace-nowrap">
+                      {formatCurrency(catalog.giaBanThamChieu)}
+                    </td>
+                    <td className="px-3 py-3 font-mono text-zinc-600 whitespace-nowrap">
+                      {catalog.maNhaCungCapMacDinh}
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-bold ${meta.bgClass} ${meta.textClass} ${meta.borderClass}`}
+                      >
+                        {it.trangThai === 'HET_HANG' ? (
+                          <AlertOctagon className="w-3 h-3" />
+                        ) : it.trangThai === 'DU_HANG' ? (
+                          <CheckCircle2 className="w-3 h-3" />
+                        ) : (
+                          <AlertTriangle className="w-3 h-3" />
+                        )}
+                        {it.trangThaiLabel}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {filteredItems.length === 0 && (
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Mã PT</th>
-                  <th className="px-4 py-3 font-semibold">Tên phụ tùng</th>
-                  <th className="px-4 py-3 font-semibold text-right">Tồn kho</th>
-                  <th className="px-4 py-3 font-semibold text-right">Đang đặt</th>
-                  <th className="px-4 py-3 font-semibold text-right">IP</th>
-                  <th className="px-4 py-3 font-semibold text-right">ROP</th>
-                  <th className="px-4 py-3 font-semibold text-right">Safety Stock</th>
-                  <th className="px-4 py-3 font-semibold text-right">Lead Time</th>
-                  <th className="px-4 py-3 font-semibold text-right">Đề xuất đặt</th>
-                  <th className="px-4 py-3 font-semibold">Trạng thái cảnh báo</th>
+                  <td colSpan={16} className="px-4 py-8 text-center text-zinc-500">
+                    Không có phụ tùng nào khớp điều kiện lọc.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {urgentParts.map((part) => {
-                  const k = part.kpi;
-                  const meta = getStatusMeta(k.trangThai);
-                  return (
-                    <tr
-                      key={part.id}
-                      onClick={() => onSelectPart(part)}
-                      className="hover:bg-amber-50/40 cursor-pointer transition-colors"
-                    >
-                      <td className="px-4 py-3 font-mono font-semibold text-zinc-900 whitespace-nowrap">
-                        {part.maPhuTung}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-zinc-900">{part.tenPhuTung}</td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums font-bold text-zinc-900">
-                        {k.tonHienTai} {part.donViTinh}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-600">
-                        {k.soLuongDangDat > 0 ? `+${k.soLuongDangDat}` : '0'}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-zinc-900">
-                        {k.inventoryPosition}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-orange-700">
-                        {k.rop}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-700">
-                        {k.safetyStock}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-600">
-                        {k.leadTime} ngày
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono tabular-nums font-bold text-orange-700">
-                        {k.roq} {part.donViTinh}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[11px] font-semibold ${meta.bgClass} ${meta.textClass} ${meta.borderClass}`}
-                        >
-                          {k.hetHang ? (
-                            <AlertOctagon className="w-3 h-3" />
-                          ) : (
-                            <AlertTriangle className="w-3 h-3" />
-                          )}
-                          {meta.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="p-8 text-center">
-            <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
-            <div className="text-sm font-semibold text-zinc-900">
-              Tất cả phụ tùng đang ở mức tồn kho an toàn
-            </div>
-            <div className="text-xs text-zinc-500 mt-1">
-              Không có mã nào có Inventory Position nhỏ hơn hoặc bằng Reorder Point.
-            </div>
-          </div>
-        )}
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
